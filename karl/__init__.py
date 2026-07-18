@@ -11,7 +11,7 @@ canned demo crew is opt-in via KARL_OFFLINE=1).
 KARL replaces MoRE. Same road, fewer parts, faster line.
 """
 
-__version__ = "9.2.2"
+__version__ = "9.3.0"
 
 from karl.cli import main
 

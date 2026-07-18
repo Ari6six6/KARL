@@ -176,6 +176,12 @@ re-provisioning anything.
 
 ## 6 · Troubleshooting, in the order it actually happens
 
+**First move, always:** `karl doctor` (also `/doctor` in the cockpit, or
+`karl wtf` if that's the mood). It checks the whole chain in seconds — config
+→ tunnel → endpoint → an actual completion → the server on the box, including
+whether the model spilled to CPU — and ends with a verdict and the exact next
+command. The table below is for reading its findings.
+
 | symptom | meaning | do |
 |---|---|---|
 | `✗ no model attached — KARL doesn't fake it` | no endpoint configured (and no box on file to reattach) | `karl gpu ssh …` or `karl config --base-url …`; `karl dash` shows which world you're in |

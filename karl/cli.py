@@ -42,6 +42,8 @@ HELP = f"""{ui.bold('Commands')}
   {ui.cyan('/gpu')} reconnect    reopen a dropped tunnel to the same box
   {ui.cyan('/gpu')} model/status/off/down   pick a model · check · drop tunnel · stop box
   {ui.cyan('/ping')}             check that the model endpoint actually answers
+  {ui.cyan('/doctor')}           full diagnostics when anything feels stuck — config,
+                    tunnel, endpoint, completion, and the box itself
   {ui.cyan('/project')} [name]   show, switch, or create the current project
   {ui.cyan('/crew')} init        write an editable crew.json you can customize
   {ui.cyan('/help')}             this
@@ -276,6 +278,9 @@ def _dispatch(session: Session, raw: str) -> bool:
         handle(rest)
     elif cmd in ("ping", "test"):
         cmd_ping()
+    elif cmd in ("doctor", "doc", "wtf"):
+        from karl.doctor import run_doctor
+        run_doctor()
     elif cmd == "notes":
         cmd_notes(project)
     elif cmd == "note":
@@ -368,6 +373,9 @@ def _main(argv=None) -> int:
         return 0
     if argv and argv[0] in ("ping", "test"):
         return cmd_ping()
+    if argv and argv[0] in ("doctor", "doc", "wtf"):
+        from karl.doctor import run_doctor
+        return run_doctor()
     if argv and argv[0] == "run":
         task = " ".join(argv[1:]).strip()
         if not task:

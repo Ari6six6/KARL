@@ -239,8 +239,7 @@ class Session:
 
         stream = ui.Stream(name, enabled=self.transcript.echo)
         tach = ui.Tach(f"{name} is thinking",
-                       hint="no tokens yet — server busy or model on CPU; "
-                            "Ctrl-C aborts")
+                       hint="no tokens yet · Ctrl-C aborts · try: karl doctor")
 
         def on_token(piece):
             tach.stop()

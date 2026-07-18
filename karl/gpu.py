@@ -448,7 +448,7 @@ def wait_ready(cargs: list, local_port: int, spec: ModelSpec, log,
 
 def _wipe(tty: bool) -> None:
     if tty:
-        sys.stdout.write("\r" + " " * 72 + "\r")
+        sys.stdout.write("\r\x1b[K")
         sys.stdout.flush()
 
 

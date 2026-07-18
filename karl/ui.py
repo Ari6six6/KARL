@@ -111,6 +111,7 @@ class Tach:
         return self
 
     def _run(self):
+        import shutil
         import time
         i = 0
         while not self._stop.wait(0.1):
@@ -119,7 +120,11 @@ class Tach:
             line = f"{self.label}… {time.time() - self._t0:.1f}s"
             if self.hint and time.time() - self._since > self.HINT_AFTER:
                 line += f" · {self.hint}"
-            sys.stdout.write("\r  " + cyan(frame) + " " + dim(line) + "   ")
+            # never exceed the terminal width: a wrapped tach line can't be
+            # \r-rewritten and smears frames down the screen instead
+            cols = shutil.get_terminal_size((80, 24)).columns
+            line = line[:max(10, cols - 5)]
+            sys.stdout.write("\r  " + cyan(frame) + " " + dim(line) + "\x1b[K")
             sys.stdout.flush()
 
     def stop(self) -> None:
@@ -131,7 +136,7 @@ class Tach:
             self._thread.join(timeout=0.3)
             self._thread = None
         if was and sys.stdout.isatty():
-            sys.stdout.write("\r" + " " * 80 + "\r")
+            sys.stdout.write("\r\x1b[K")
             sys.stdout.flush()
 
     # context-manager sugar for one-shot uses
