@@ -10,7 +10,7 @@ built-in offline stand-in when no model is attached.
 KARL replaces MoRE. Same road, fewer parts, faster line.
 """
 
-__version__ = "9.1.1"
+__version__ = "9.1.2"
 
 from karl.cli import main
 

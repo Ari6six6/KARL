@@ -103,6 +103,34 @@ def test_taint_flag_reaches_the_operator(project):
     assert "⚠" in last and "example.com" in last
 
 
+def test_offline_rounds_announce_the_stand_in(project, capsys):
+    s = Session(project, echo=True)    # echo on, no endpoint → offline
+    s.run_task("whats in the report?")
+    out = capsys.readouterr().out
+    assert "offline stand-in" in out and "canned" in out
+
+
+def test_engine_refreshes_between_tasks(project, monkeypatch):
+    # session born pointing at a model…
+    monkeypatch.setenv("KARL_BASE_URL", "http://127.0.0.1:1/v1")
+    s = Session(project, echo=False)
+    assert s.mode == "model"
+    # …endpoint dropped (gpu off / config change) → next task must notice
+    monkeypatch.delenv("KARL_BASE_URL")
+    s.run_task("still there?")
+    assert s.mode == "offline"
+    assert s.transcript.entries()[-1]["addressee"] == "operator"
+
+
+def test_injected_test_engine_is_never_refreshed(project, monkeypatch):
+    monkeypatch.setenv("KARL_BASE_URL", "http://127.0.0.1:1/v1")
+    engine = ScriptEngine([{"text": "operator, done."}])
+    s = Session(project, echo=False, engine=engine)
+    s.run_task("go")
+    assert s.mode == "test"
+    assert s.transcript.entries()[-1]["text"] == "operator, done."
+
+
 def test_session_transcript_lands_on_disk(project):
     s = Session(project, echo=False)
     s.run_task("hello crew")

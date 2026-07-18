@@ -19,7 +19,7 @@ import re
 import time
 
 from karl import ui
-from karl.config import load_project
+from karl.config import endpoint, load_project, web_open
 from karl.crew import build_system, load_crew
 from karl.engine import make_engine
 from karl.loop import think_and_act
@@ -116,7 +116,6 @@ class Session:
             self.engine, self.mode = engine, "test"
         else:
             self.engine, self.mode = make_engine()
-        from karl.config import endpoint, web_open
         cfg = endpoint()
         self.shell_mode = cfg.get("shell", "off")
         self.shell_net = cfg.get("shell_net", "none")
@@ -126,9 +125,29 @@ class Session:
         self.tainted: list = []
         self._tool_count = 0
 
+    def _refresh(self) -> None:
+        """Re-read the endpoint before each task, so `/gpu ssh …` or a `karl
+        config` from another terminal takes effect mid-session instead of the
+        cockpit riding a stale engine until restart. Injected test engines are
+        left alone."""
+        if self.mode == "test":
+            return
+        self.engine, self.mode = make_engine()
+        cfg = endpoint()
+        self.shell_mode = cfg.get("shell", "off")
+        self.shell_net = cfg.get("shell_net", "none")
+        self.web_open = web_open()
+
     # -- one task --------------------------------------------------------
     def run_task(self, text: str) -> None:
         import sys
+        self._refresh()
+        if self.mode == "offline" and self.transcript.echo:
+            # the stand-in must never pass for the real crew
+            print("  " + ui.yellow("⚠ offline stand-in — no model attached; the crew "
+                                   "below is canned theater.")
+                  + ui.dim("  attach one: karl gpu ssh <ssh…>  ·  "
+                           "karl config --base-url <url>"))
         tr = self.transcript
         t0 = time.time()
         tools0, taint0 = self._tool_count, len(self.tainted)
