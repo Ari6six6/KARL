@@ -90,6 +90,38 @@ def run_doctor(out=print) -> int:
     if boxed:
         cargs = state["ssh_conn"]
         out(ui.dim("  checking the box over ssh…"))
+
+        # the GPU itself first — a dead GPU explains everything downstream,
+        # and it's the one failure that impersonates "slow model" perfectly
+        rc, smi, _ = gpu.run(
+            cargs, "nvidia-smi --query-gpu=name,memory.used,memory.total,"
+                   "utilization.gpu --format=csv,noheader,nounits", timeout=25)
+        if rc != 0 or not smi.strip() or "ERR" in smi.upper():
+            _bad(out, "gpu", "nvidia-smi is not answering sanely — the GPU "
+                             "is dead or fell off the bus")
+            trouble.append("the box's GPU is broken — destroy this instance "
+                           "in the Vast console and rent another; no setting "
+                           "fixes dead silicon")
+        else:
+            used = total = 0
+            names = []
+            for ln in smi.strip().splitlines():
+                bits = [b.strip() for b in ln.split(",")]
+                if len(bits) >= 4:
+                    names.append(f"{bits[0]} {bits[1]}/{bits[2]}MB util {bits[3]}%")
+                    try:
+                        used += int(float(bits[1]))
+                        total += int(float(bits[2]))
+                    except ValueError:
+                        pass
+            _ok(out, "gpu", " · ".join(names) or smi.strip()[:100])
+            if gpu.server_running(cargs) and total and used < 1024:
+                _bad(out, "vram", f"server is up but only {used}MB VRAM in use "
+                                  "— the model is not on the GPU")
+                trouble.append("the model loaded outside the GPU (CPU fallback) "
+                               "— check `~/karl.log` for CUDA errors; if the "
+                               "GPU looks healthy, re-run `karl gpu ssh …`")
+
         if gpu.server_running(cargs):
             _ok(out, "server", "process alive on the box")
         else:

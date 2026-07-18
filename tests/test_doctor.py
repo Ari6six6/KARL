@@ -54,6 +54,25 @@ def test_doctor_all_clear_with_a_live_endpoint(project, capsys):
         srv.shutdown()
 
 
+def test_doctor_unmasks_a_dead_gpu(project, capsys, monkeypatch):
+    from karl import gpu
+    set_config(base_url="http://127.0.0.1:9/v1", model="m")
+    gpu._save({"ssh_conn": ["-p", "1", "root@h"], "served": True,
+               "local_port": 8080, "remote_port": 8080, "tunnel_pid": None})
+
+    def fake_run(cargs, cmd, timeout=120):
+        if "nvidia-smi" in cmd:
+            return 1, "", "Unable to determine the device handle for GPU"
+        return 0, "some log line", ""
+
+    monkeypatch.setattr(gpu, "run", fake_run)
+    monkeypatch.setattr(gpu, "server_running", lambda cargs: True)
+    assert run_doctor() == 1
+    out = capsys.readouterr().out
+    assert "dead or fell off the bus" in out
+    assert "destroy this instance" in out
+
+
 def test_doctor_from_the_cli(project, capsys):
     from karl.cli import main
     assert main(["doctor"]) == 1          # no endpoint in a fresh home
