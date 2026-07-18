@@ -29,6 +29,10 @@ karl ▸ The workspace has three modules — a CLI entry point, a storage layer,
 
 KARL is not an acronym. It's a name — ask a 911 what it stands for.
 
+**Live on a GPU box right now?** The [Field Manual](MANUAL.md) takes you from
+a Vast.ai SSH string to a working crew in 90 seconds, with the troubleshooting
+table for everything that happens after.
+
 > **KARL replaces [MoRE](https://github.com/Ari6six6/MoRE).** MoRE is the
 > BMW: sensible, roomy, well-documented, still parked where it always was.
 > KARL is the Porsche — the same road with fewer parts and a faster line.
