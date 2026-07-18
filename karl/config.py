@@ -62,9 +62,11 @@ def endpoint() -> dict:
     """
     cfg = load_json(config_path(), {})
     base = os.environ.get("KARL_BASE_URL") or cfg.get("base_url") or ""
-    shell = os.environ.get("KARL_SHELL") or cfg.get("shell") or "off"
+    # the shell is ON by default, in its sandboxed form — a crew that cannot
+    # build or test is a crew that stalls. "off" remains one config away.
+    shell = os.environ.get("KARL_SHELL") or cfg.get("shell") or "container"
     if shell not in ("off", "container", "host"):
-        shell = "off"
+        shell = "container"
     return {
         "base_url": base.rstrip("/"),
         "model": os.environ.get("KARL_MODEL") or cfg.get("model") or "local",

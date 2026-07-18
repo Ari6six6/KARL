@@ -82,11 +82,12 @@ DEFAULT_CREW = [
         role="the mechanic — hands-on file and (opt-in) shell work",
         system=(
             "You are Wrench. You do the hands-on work in the shared workspace: "
-            "writing and editing files and, when the operator has enabled it, "
-            "running shell commands to build and check things. Prefer edit_file "
-            "for surgical changes and write_file for new files. Do the work, "
-            "verify it if you can, then report exactly what you changed. Hand "
-            "back to karl by name."),
+            "writing and editing files, and running shell commands to build and "
+            "check things (sandboxed in a disposable container by default; the "
+            "operator may be asked to grant more). Prefer edit_file for "
+            "surgical changes and write_file for new files. Do the work, verify "
+            "it if you can, then report exactly what you changed. Hand back to "
+            "karl by name."),
         can_egress=False,
         tools=["read_file", "write_file", "edit_file", "list_dir", "search",
                "run_shell"],

@@ -86,6 +86,39 @@ def test_shell_off_is_denied(project):
     assert out.startswith("DENIED")
 
 
+def test_no_runtime_asks_the_operator_and_obeys_the_answer(project, monkeypatch):
+    import karl.shell
+    monkeypatch.setattr(karl.shell, "probe_runtime", lambda: "")
+
+    # headless / no consent hook → denied with the ways out
+    ctx = _ctx(project, shell_mode="container")
+    out = _run(ctx, ["run_shell"], "run_shell", {"command": "echo hi"})
+    assert "DENIED" in out and "Docker" in out
+
+    # operator says yes → the command runs on the host, this call
+    asked = []
+    ctx = _ctx(project, shell_mode="container",
+               ask=lambda q: asked.append(q) or True)
+    out = _run(ctx, ["run_shell"], "run_shell", {"command": "echo hi"})
+    assert "[exit 0]" in out and "hi" in out
+    assert "HOST" in asked[0]
+
+    # operator says no → denied
+    ctx = _ctx(project, shell_mode="container", ask=lambda q: False)
+    out = _run(ctx, ["run_shell"], "run_shell", {"command": "echo hi"})
+    assert "DENIED" in out
+
+
+def test_session_shell_grant_survives_refresh(project, monkeypatch):
+    monkeypatch.setenv("KARL_OFFLINE", "1")
+    from karl.session import Session
+    s = Session(project, echo=False)
+    assert s.shell_mode == "container"    # the new default
+    s._shell_grant = "host"               # what saying yes at the prompt sets
+    s._refresh()
+    assert s.shell_mode == "host"         # config re-read does not revoke it
+
+
 def test_host_shell_runs_in_the_workspace(project):
     ctx = _ctx(project, shell_mode="host")
     (ctx.workspace / "hello.txt").write_text("hi")

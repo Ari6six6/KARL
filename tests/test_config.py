@@ -5,10 +5,10 @@ from __future__ import annotations
 from karl.config import Project, endpoint, set_config, valid_project_name, web_open
 
 
-def test_endpoint_defaults_offline(project):
+def test_endpoint_defaults(project):
     cfg = endpoint()
     assert cfg["base_url"] == ""
-    assert cfg["shell"] == "off"
+    assert cfg["shell"] == "container"   # shell ON by default, sandboxed
     assert cfg["stream"] is True
 
 
@@ -21,8 +21,13 @@ def test_env_beats_the_config_file(project, monkeypatch):
     assert cfg["model"] == "from-env"
 
 
-def test_bogus_shell_mode_falls_back_to_off(project):
+def test_bogus_shell_mode_falls_back_to_container(project):
     set_config(shell="yolo")
+    assert endpoint()["shell"] == "container"
+
+
+def test_shell_can_still_be_turned_off(project):
+    set_config(shell="off")
     assert endpoint()["shell"] == "off"
 
 

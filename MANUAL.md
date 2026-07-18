@@ -125,16 +125,26 @@ karl -C ~/code/my-repo run "find the failing test"     # crew works on a real di
 
 ---
 
-## 3 · The shell decision (make it once, deliberately)
+## 3 · The shell (ON by default, sandboxed)
 
-`run_shell` is **off** by default — wrench will say so and work around it.
-Three modes, via `karl config --shell …`:
+`run_shell` is **on** out of the box, in `container` mode: each command runs
+in a disposable Docker/Podman container with only the workspace mounted and no
+network. If **no container runtime is running**, KARL doesn't stall the crew —
+it asks *you*, right at the prompt, mid-round:
+
+```
+⚠ wrench asks: no container runtime is running — allow an unsandboxed HOST shell for this session? [y/N]
+```
+
+`y` grants a host shell for this session only; `N` and the crew works without
+the shell. (Headless runs can't consent — they stay denied.) The modes, via
+`karl config --shell …`:
 
 | mode        | what runs where | when |
 |-------------|-----------------|------|
-| `off`       | nothing         | default |
-| `container` | disposable Docker/Podman container, workspace-only mount, **no network** | recommended on your own machine |
-| `host`      | directly on the machine KARL runs on | **only when KARL itself is in a disposable box** |
+| `container` | disposable Docker/Podman container, workspace-only mount, **no network** | **default** |
+| `host`      | directly on the machine KARL runs on | when KARL itself is in a disposable box, or you said `y` above |
+| `off`       | nothing | when you want a talk-only crew |
 
 **The Vast play:** the rented box is disposable by definition, so the clean
 setup is to run KARL *on the box* and open the host shell there:

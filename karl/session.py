@@ -123,6 +123,7 @@ class Session:
         self.transcript = Transcript(self.project.session_path(stamp), echo=echo)
         self.tainted: list = []
         self._tool_count = 0
+        self._shell_grant = None    # "host" once the operator says yes, this session
 
     def _refresh(self) -> None:
         """Re-read the endpoint before each task, so `/gpu ssh …` or a `karl
@@ -133,7 +134,7 @@ class Session:
             return
         self.engine, self.mode = make_engine()
         cfg = endpoint()
-        self.shell_mode = cfg.get("shell", "off")
+        self.shell_mode = self._shell_grant or cfg.get("shell", "off")
         self.shell_net = cfg.get("shell_net", "none")
         self.web_open = web_open()
 
@@ -240,6 +241,32 @@ class Session:
         stream = ui.Stream(name, enabled=self.transcript.echo)
         tach = ui.Tach(f"{name} is thinking",
                        hint="no tokens yet · Ctrl-C aborts · try: karl doctor")
+
+        def ask_operator(question):
+            """The consent lever, pulled mid-round: the tach yields the line,
+            the operator answers, the round continues. TTY only — a headless
+            run can't consent, so it stays denied there."""
+            import sys as _sys
+            if not (_sys.stdin.isatty() and _sys.stdout.isatty()):
+                return False
+            tach.stop()
+            stream.end()
+            try:
+                answer = input("  " + ui.yellow(f"⚠ {name} asks: {question} [y/N] "))
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+            granted = answer.strip().lower() in ("y", "yes")
+            if granted:
+                self._shell_grant = "host"
+                self.shell_mode = ctx.shell_mode = "host"
+                print(ui.dim("  host shell granted for this session — persist or "
+                             "revoke with `karl config --shell host|container|off`"))
+            else:
+                print(ui.dim("  declined — the crew works without the shell."))
+            tach.start()
+            return granted
+
+        ctx.ask = ask_operator
 
         def on_token(piece):
             tach.stop()

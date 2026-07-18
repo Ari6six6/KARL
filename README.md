@@ -198,14 +198,16 @@ observation the agent reads on its next step.
   to the workspace. A path that escapes it is refused; long files page instead
   of truncating silently. `edit_file` swaps one exact occurrence and refuses
   ambiguity — an edit lands exactly where intended or not at all.
-- **`run_shell`** — off by default. Three modes (`karl config --shell …`):
-  - `off` — refused.
-  - `container` *(recommended)* — runs in a disposable Docker/Podman container
-    with only the workspace mounted and **no network**. If no runtime is
-    running, it refuses rather than silently touching the host. Allow network
-    for a build with `karl config --shell-net bridge`.
-  - `host` — runs directly on the host in the workspace dir. Unsandboxed; only
+- **`run_shell`** — **on by default, sandboxed**. Three modes
+  (`karl config --shell …`):
+  - `container` *(default)* — runs in a disposable Docker/Podman container
+    with only the workspace mounted and **no network**. No runtime running?
+    KARL asks you at the prompt whether to allow a host shell for the session
+    — it never touches the host silently. Allow network for a build with
+    `karl config --shell-net bridge`.
+  - `host` — runs directly on the host in the workspace dir. Unsandboxed;
     sensible when KARL itself is already in a throwaway box/container.
+  - `off` — refused; a talk-only crew.
 - **`web_fetch`** — the crew's way onto the public web:
   - only agents marked `can_egress` (the `scout`) get it;
   - **open by default** — any public site, no per-domain permission. (Prefer a

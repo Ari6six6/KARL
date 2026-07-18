@@ -38,6 +38,7 @@ class ToolContext:
     shell_net: str = "none"       # container network: "none" (default) or "bridge"
     tainted: list = field(default_factory=list)   # domains fetched from outside
     changed: list = field(default_factory=list)   # files written this run
+    ask: object = None            # operator consent hook: (question) -> bool, TTY only
 
 
 @dataclass
@@ -183,10 +184,21 @@ def _search(args, ctx):
 # --------------------------------------------------------------------------
 # shell (opt-in: container by default, host only by explicit choice)
 # --------------------------------------------------------------------------
+def _host_shell(cmd: str, ctx, timeout: int) -> str:
+    try:
+        p = subprocess.run(cmd, shell=True, cwd=str(ctx.workspace),
+                           capture_output=True, text=True, errors="replace",
+                           timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "[timed out]"
+    tail = (p.stdout or "") + (("\n" + p.stderr) if p.stderr.strip() else "")
+    return f"[exit {p.returncode}]\n{tail[:4000]}" if tail.strip() else f"[exit {p.returncode}] (no output)"
+
+
 def _run_shell(args, ctx):
     if ctx.shell_mode == "off":
-        return ("DENIED: shell is off. The operator can enable a sandboxed shell "
-                "with `karl config --shell container` (needs Docker or Podman).")
+        return ("DENIED: the operator turned the shell off. "
+                "`karl config --shell container` re-enables the sandboxed default.")
     cmd = (args.get("command") or "").strip()
     if not cmd:
         return "ERROR: no command"
@@ -197,23 +209,22 @@ def _run_shell(args, ctx):
         from karl.shell import probe_runtime, run_in_container
         rt = probe_runtime()
         if not rt:
-            return ("DENIED: sandboxed shell needs a container runtime, but none "
-                    "is running. Start Docker/Podman, or (unsafe) allow a host "
-                    "shell with `karl config --shell host`.")
+            # no runtime — put the choice to the operator right now, on a TTY,
+            # instead of stalling the crew behind a wall the operator can't see
+            if ctx.ask and ctx.ask("no container runtime is running — allow an "
+                                   "unsandboxed HOST shell for this session?"):
+                return _host_shell(cmd, ctx, timeout)
+            return ("DENIED: the sandboxed shell needs Docker or Podman running, "
+                    "and none answered. The operator can start one, allow the "
+                    "host shell (`karl config --shell host`), or answer yes "
+                    "when asked at the prompt.")
         rc, out, err = run_in_container(ctx.workspace, cmd, runtime=rt,
                                         network=ctx.shell_net, timeout=timeout)
         tail = (out or "") + (("\n" + err) if err and err.strip() else "")
         return f"[exit {rc}]\n{tail[:4000]}" if tail.strip() else f"[exit {rc}] (no output)"
 
     # host mode — explicit, unsandboxed opt-in
-    try:
-        p = subprocess.run(cmd, shell=True, cwd=str(ctx.workspace),
-                           capture_output=True, text=True, errors="replace",
-                           timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return "[timed out]"
-    tail = (p.stdout or "") + (("\n" + p.stderr) if p.stderr.strip() else "")
-    return f"[exit {p.returncode}]\n{tail[:4000]}" if tail.strip() else f"[exit {p.returncode}] (no output)"
+    return _host_shell(cmd, ctx, timeout)
 
 
 # --------------------------------------------------------------------------
