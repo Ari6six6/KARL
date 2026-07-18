@@ -19,12 +19,14 @@ def test_help_flag(project, capsys):
 
 def test_config_roundtrip(project, capsys):
     rc = config_from_args(["--base-url", "http://localhost:1234/v1",
-                           "--model", "tiny", "--shell", "container"])
+                           "--model", "tiny", "--shell", "container",
+                           "--timeout", "60"])
     assert rc == 0
     cfg = endpoint()
     assert cfg["base_url"] == "http://localhost:1234/v1"
     assert cfg["model"] == "tiny"
     assert cfg["shell"] == "container"
+    assert cfg["timeout"] == 60.0
 
 
 def test_config_rejects_unknown_flags_and_bad_values(project, capsys):

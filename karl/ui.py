@@ -83,13 +83,16 @@ class Tach:
     """
 
     FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    HINT_AFTER = 40   # seconds of silence before the tach admits it
 
-    def __init__(self, label: str = "working"):
+    def __init__(self, label: str = "working", hint: str = ""):
         self.label = label
+        self.hint = hint          # shown once the current silence runs long
         self.active = False
         self._stop = None
         self._thread = None
-        self._t0 = None
+        self._t0 = None           # start of the whole turn (what the clock shows)
+        self._since = None        # start of the current silence (what the hint reads)
 
     def set(self, label: str) -> None:
         self.label = label
@@ -102,6 +105,7 @@ class Tach:
             self._stop = threading.Event()
             if self._t0 is None:
                 self._t0 = time.time()
+            self._since = time.time()
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
         return self
@@ -112,8 +116,10 @@ class Tach:
         while not self._stop.wait(0.1):
             i += 1
             frame = self.FRAMES[i % len(self.FRAMES)]
-            sys.stdout.write("\r  " + cyan(frame) + " "
-                             + dim(f"{self.label}… {time.time() - self._t0:.1f}s") + "   ")
+            line = f"{self.label}… {time.time() - self._t0:.1f}s"
+            if self.hint and time.time() - self._since > self.HINT_AFTER:
+                line += f" · {self.hint}"
+            sys.stdout.write("\r  " + cyan(frame) + " " + dim(line) + "   ")
             sys.stdout.flush()
 
     def stop(self) -> None:

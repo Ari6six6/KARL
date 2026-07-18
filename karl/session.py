@@ -238,7 +238,9 @@ class Session:
         steps = 12 if (agent.can_egress or "run_shell" in agent.tools) else 8
 
         stream = ui.Stream(name, enabled=self.transcript.echo)
-        tach = ui.Tach(f"{name} is thinking")
+        tach = ui.Tach(f"{name} is thinking",
+                       hint="no tokens yet — server busy or model on CPU; "
+                            "Ctrl-C aborts")
 
         def on_token(piece):
             tach.stop()

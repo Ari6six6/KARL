@@ -188,6 +188,7 @@ re-provisioning anything.
 | `karl ping` fails after it all worked before | tunnel dropped (sleep, wifi) | `karl gpu reconnect` |
 | `(the model endpoint didn't respond …)` mid-session | same as above, seen from inside | `karl gpu reconnect`, then re-ask |
 | crew talks but never uses tools | server launched without tool-calling | use `karl gpu ssh` (it enables it), or add `--enable-auto-tool-choice --tool-call-parser hermes` to your own vLLM |
+| tach climbs for minutes, `no tokens yet` hint appears | server overloaded, still loading — or the model spilled to **CPU** (VRAM too tight) | on the box: `tail ~/karl.log`, look for `offloaded X/Y layers` with X&lt;Y; pick a smaller model (`karl gpu model qwen`) or a bigger box. KARL reports a stall at the timeout (`karl config --timeout N`) instead of silently retrying |
 | garbled/looping output | small model in a repeat loop | KARL trims it automatically (`…repeat loop trimmed`); lower temperature: `karl config --temperature 0.3` |
 | screen theatrics broken over a dumb pipe | not a TTY | expected — off-TTY KARL prints whole plain lines |
 

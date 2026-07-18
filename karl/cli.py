@@ -209,13 +209,13 @@ def config_from_args(argv: list) -> int:
     updates, i = {}, 0
     flags = {"--base-url": "base_url", "--model": "model", "--api-key": "api_key",
              "--max-tokens": "max_tokens", "--temperature": "temperature",
-             "--shell": "shell", "--shell-net": "shell_net", "--web": "web",
-             "--stream": "stream"}
+             "--timeout": "timeout", "--shell": "shell", "--shell-net": "shell_net",
+             "--web": "web", "--stream": "stream"}
     while i < len(argv):
         a = argv[i]
         if a in flags and i + 1 < len(argv):
             val = argv[i + 1]
-            if a == "--max-tokens":
+            if a in ("--max-tokens", "--timeout"):
                 val = int(val)
             elif a == "--temperature":
                 val = float(val)

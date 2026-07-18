@@ -81,6 +81,34 @@ def test_cut_loops_leaves_ordinary_text_alone():
     assert cut_loops(None) == ""
 
 
+# --- stall triage: a dead stream must never multiply into the retry ladder -
+def _raiser(exc):
+    def _f(*a, **kw):
+        raise exc
+    return _f
+
+
+def test_stalled_stream_reports_instead_of_retrying(monkeypatch):
+    from karl.engine import HTTPEngine
+    e = HTTPEngine({"base_url": "http://x/v1"})
+    e.STALL_S = -1          # any failure counts as "it hung a long time"
+    monkeypatch.setattr(e, "_open", _raiser(TimeoutError("read timed out")))
+    fell_back = []
+    monkeypatch.setattr(e, "_complete", lambda m, t: fell_back.append(1))
+    res = e.chat([{"role": "user", "content": "x"}], on_token=lambda p: None)
+    assert "stalled" in res.content
+    assert fell_back == []   # no 20-minute retry marathon
+
+
+def test_fast_stream_failure_falls_back_to_plain(monkeypatch):
+    from karl.engine import ChatResult, HTTPEngine
+    e = HTTPEngine({"base_url": "http://x/v1"})   # STALL_S default: 0s elapsed → fast
+    monkeypatch.setattr(e, "_open", _raiser(OSError("stream unsupported")))
+    monkeypatch.setattr(e, "_complete", lambda m, t: ChatResult(content="plain"))
+    res = e.chat([{"role": "user", "content": "x"}], on_token=lambda p: None)
+    assert res.content == "plain"
+
+
 # --- the stand-ins ---------------------------------------------------------
 def test_mock_engine_speaks_its_seed_and_streams_it():
     e = MockEngine()

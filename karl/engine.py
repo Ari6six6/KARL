@@ -125,6 +125,7 @@ def parse_sse(lines, on_token=None) -> ChatResult:
 # --------------------------------------------------------------------------
 class HTTPEngine(Engine):
     RETRY_DELAYS = (1, 3, 8)
+    STALL_S = 15   # a stream that died after this long was a stall, not "can't stream"
 
     def __init__(self, cfg: dict):
         self.base_url = cfg["base_url"].rstrip("/")
@@ -153,12 +154,26 @@ class HTTPEngine(Engine):
     def chat(self, messages: list, tools: list | None = None,
              on_token=None) -> ChatResult:
         if self.stream and on_token is not None:
+            t0 = time.time()
             try:
                 with self._open({**self._body(messages, tools),
                                  "stream": True}) as resp:
                     return parse_sse(resp, on_token)
-            except Exception:  # noqa: BLE001 — a server that can't stream is not an outage
-                pass
+            except Exception as e:  # noqa: BLE001 — sort stall from can't-stream
+                waited = time.time() - t0
+                if waited > self.STALL_S:
+                    # The server took the request and produced nothing for a
+                    # long time. Falling back would multiply the wait by the
+                    # whole retry ladder and look like a freeze — report the
+                    # stall honestly instead.
+                    return ChatResult(content=(
+                        f"(the model stalled — no output for {waited:.0f}s, then "
+                        f"{type(e).__name__}). The server is overloaded, still "
+                        "loading, or running the model partly on CPU (VRAM too "
+                        "small — check `~/karl.log` on the box for 'offloaded "
+                        "X/Y layers'). Try a smaller model (`karl gpu model "
+                        "<key>`), or raise `karl config --timeout`."))
+                # failed fast → the server likely can't stream; ask plainly
         return self._complete(messages, tools)
 
     def _complete(self, messages: list, tools: list | None) -> ChatResult:
