@@ -82,27 +82,26 @@ class Transcript:
 def next_speaker(speaker: str, text: str, names: list, lead: str) -> str:
     """Who speaks next after ``speaker`` said ``text``.
 
-    The first name the line calls (that isn't the speaker's own) wins. Naming
-    the operator closes the round when the chief says it, and is routed to the
-    chief when anyone else says it (only the chief speaks with the operator). A
-    line that names no one falls to the chief — and the chief, with no one to
-    hand to, turns to the operator, which is how a round ends.
+    The convention is "END your line by naming who speaks next", so the *last*
+    name the line calls (that isn't the speaker's own) wins — a teammate
+    mentioned mid-sentence ("I'll have wrench do it later. operator, which
+    kind?") must not steal a handoff meant for the operator. Naming the
+    operator closes the round when the chief says it, and is routed to the
+    chief when anyone else says it (only the chief speaks with the operator).
+    A line that names no one falls to the chief — and the chief, with no one
+    to hand to, turns to the operator, which is how a round ends.
     """
     vocab = [n.lower() for n in names] + list(_OPERATOR_ALIASES)
     pattern = re.compile(r"\b(" + "|".join(re.escape(v) for v in vocab) + r")\b",
                          re.IGNORECASE)
-    seen = set()
+    chosen = None
     for m in pattern.finditer(text or ""):
         name = m.group(1).lower()
-        if name in seen:
-            continue
-        seen.add(name)
-        if name == speaker.lower():
-            continue
-        if name in _OPERATOR_ALIASES:
-            return "operator" if speaker == lead else lead
-        return name
-    return "operator" if speaker == lead else lead
+        if name != speaker.lower():
+            chosen = name
+    if chosen is None or chosen in _OPERATOR_ALIASES:
+        return "operator" if speaker == lead else lead
+    return chosen
 
 
 class Session:

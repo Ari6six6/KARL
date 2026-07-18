@@ -85,6 +85,22 @@ def test_step_budget_always_terminates(project):
     assert line  # spoke something rather than spinning forever
 
 
+def test_identical_tool_calls_trip_the_stuck_reflex(project):
+    # the field bug: rewording the same sentence while making the same tool
+    # call forever — every step "says something", so the reflect nudge never
+    # fires. The stuck reflex must push, then end the turn.
+    from karl.loop import _STUCK_NUDGE
+    ctx = _ctx(project)
+    same = {"tool": "list_dir", "args": {}, "say": "I'll have wrench create it."}
+    engine = _Recorder([dict(same) for _ in range(12)])
+    line, _ = think_and_act(engine, system="s", user="u",
+                            tools=build_tools(["list_dir"], ctx), ctx=ctx,
+                            max_steps=12)
+    assert line   # spoke and terminated
+    assert any(m.get("content") == _STUCK_NUDGE for m in engine.seen)
+    assert engine.script            # bailed long before burning the whole script
+
+
 def test_empty_answer_gets_one_nudge(project):
     ctx = _ctx(project)
     engine = _Recorder([{"text": ""}, {"text": "Here is my line."}])

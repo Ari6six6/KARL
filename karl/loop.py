@@ -35,6 +35,11 @@ _EMPTY_NUDGE = (
     "You said nothing. Speak your one plain-English line now — what you see, what "
     "you did, or what you need.")
 
+_STUCK_NUDGE = (
+    "You have made the exact same tool call several times — the result will not "
+    "change. Do not call it again. Act on what you already know, or hand off by "
+    "naming who speaks next.")
+
 
 def think_and_act(engine, *, system: str, user: str, tools: list, ctx,
                   seed: str | None = None, on_token=None,
@@ -51,6 +56,8 @@ def think_and_act(engine, *, system: str, user: str, tools: list, ctx,
     warned = False
     empty_nudged = False
     budget = max_steps
+    last_calls = None    # the previous step's exact tool calls
+    same_calls = 0       # …and how often they've repeated verbatim
 
     step = 0
     while step < budget:
@@ -82,6 +89,18 @@ def think_and_act(engine, *, system: str, user: str, tools: list, ctx,
             obs = execute(tools, c, ctx)
             on_tool(c.name, obs.splitlines()[0][:80] if obs else "")
             messages.append({"role": "tool", "tool_call_id": c.id, "content": obs})
+
+        # the stuck reflex: rewording the same sentence while making the same
+        # tool call is still a loop — the reflect nudge below never sees it
+        # because every step "says something". Same exact calls three times →
+        # push once; a fourth repeat after the push → stop the turn.
+        calls = tuple((c.name, c.arguments) for c in res.tool_calls)
+        same_calls = same_calls + 1 if calls == last_calls else 0
+        last_calls = calls
+        if same_calls == 2:
+            messages.append({"role": "user", "content": _STUCK_NUDGE})
+        elif same_calls >= 3:
+            break
 
         act_streak = act_streak + 1 if not (res.content or "").strip() else 0
         if act_streak >= _REFLECT_AFTER:

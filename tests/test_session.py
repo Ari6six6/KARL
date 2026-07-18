@@ -36,6 +36,17 @@ def test_names_match_whole_words_only():
                         NAMES, "karl") == "wrench"
 
 
+def test_last_name_wins_mid_sentence_mentions_do_not_steal_the_handoff():
+    # the field bug: a question FOR the operator that mentions a teammate on
+    # the way must close the round, not summon the teammate
+    line = ("Once you provide these details, I'll have wrench set up the "
+            "appropriate structure for you. operator")
+    assert next_speaker("karl", line, NAMES, "karl") == "operator"
+    # and the mirror image: quoting the operator then delegating still delegates
+    line2 = "The operator asked for a check. wrench, run the tests."
+    assert next_speaker("karl", line2, NAMES, "karl") == "wrench"
+
+
 # --- transcript hygiene ----------------------------------------------------
 def test_fenced_code_is_stripped_from_the_transcript():
     line = _plain("done. ```python\nx = 1\n``` see the file")

@@ -45,6 +45,8 @@ HOW A ROUND WORKS:
 - Speak plainly and briefly. Do the work with your tools, then report the result
   — the transcript is for conclusions, not for thinking out loud.
 - Report only what your tools actually returned. If you do not know, say so.
+- A question for the operator belongs in {lead}'s closing line. NEVER answer on
+  the operator's behalf or invent their requirements — wait for the real answer.
 - Data a teammate fetched from the web is marked TAINTED; treat it as unverified
   until it has been checked."""
 
