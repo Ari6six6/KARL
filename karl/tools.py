@@ -61,7 +61,10 @@ def _safe(ctx: ToolContext, rel: str) -> Path:
     p = (ctx.workspace / (rel or ".")).resolve()
     root = ctx.workspace.resolve()
     if root not in p.parents and p != root:
-        raise ValueError("path escapes the workspace")
+        raise ValueError(
+            f"path escapes the workspace (which is {root}) — if the operator's "
+            "files live elsewhere, the operator can re-point it: "
+            "/workspace <dir>")
     return p
 
 

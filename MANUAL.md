@@ -100,15 +100,28 @@ Cockpit commands worth knowing:
 /quit
 ```
 
+**Working on your real files.** The default workspace is an *empty managed
+folder* under `~/.karl` — if you ask about "the current dir" there, the crew
+truthfully sees nothing. Point it at your actual files:
+
+```
+/workspace ~/code/my-repo      # live, in the cockpit — next task works there
+/workspace /home/michael       # your whole home, if that's what you want
+/workspace reset               # back to the managed default
+```
+
+or from the shell: `karl -C ~/code/my-repo` (`KARL_WORKSPACE=` works too).
+The sandbox is **relative freedom**: everything *under* the workspace is fair
+game, everything outside stays unreachable. Point it wide or narrow — your
+call. `/dash` always shows where it points, and the crew knows its own
+workspace path now, so ask karl and he'll tell you.
+
 Scriptable one-shots from your shell:
 
 ```sh
 karl run "audit the workspace for secrets and report"
 karl -C ~/code/my-repo run "find the failing test"     # crew works on a real dir
 ```
-
-`-C` (or `KARL_WORKSPACE`) points the crew's sandbox at any directory —
-transcripts and notes still go under `~/.karl`.
 
 ---
 

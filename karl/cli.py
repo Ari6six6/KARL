@@ -35,6 +35,8 @@ HELP = f"""{ui.bold('Commands')}
   {ui.dim('(the web is open by default — the crew can browse any public site freely)')}
   {ui.cyan('/allow')} <domain>   (only if you ran `config --web gated`) allowlist a domain
   {ui.cyan('/deny')} <domain>    remove a domain from the allowlist
+  {ui.cyan('/workspace')} <dir>  re-point the crew's workspace at any directory, live
+                    ({ui.cyan('/workspace reset')} returns to the managed default)
   {ui.cyan('/note')} <text>      add a durable project note (memory across sessions)
   {ui.cyan('/notes')}            show the project notes
   {ui.cyan('/model')}            show how KARL reaches the model
@@ -85,6 +87,7 @@ def cmd_dash(project) -> None:
         for a in crew)
     print(ui.dash([
         ("project", ui.bold(project.name)),
+        ("workspace", str(project.workspace)),
         ("engine", engine),
         ("web", _web_label()),
         ("shell", _shell_label(cfg)),
@@ -186,6 +189,32 @@ def cmd_project(rest: str):
     return load_project()
 
 
+def cmd_workspace(project, rest: str) -> None:
+    """Show or re-point the crew's workspace, live — the freedom lever. The
+    sandbox is relative: point it at your repo and everything under it is fair
+    game; point it at /home and so is all of that. The operator decides."""
+    import os
+    if not rest:
+        print(ui.dim(f"  workspace: {project.workspace}"))
+        print(ui.dim("  /workspace <dir> re-points it (this session) · "
+                     "/workspace reset returns to the managed default · "
+                     "`karl -C <dir>` starts there"))
+        return
+    if rest in ("reset", "default", "off"):
+        os.environ.pop("KARL_WORKSPACE", None)
+        print(ui.green(f"  workspace → {project.workspace}")
+              + ui.dim("  (the managed default)"))
+        return
+    p = Path(rest.split()[0]).expanduser().resolve()
+    if not p.is_dir():
+        print(ui.yellow(f"  {p} is not a directory — nothing changed."))
+        return
+    os.environ["KARL_WORKSPACE"] = str(p)
+    print(ui.green(f"  workspace → {p}")
+          + ui.dim("  (everything under it is now the crew's world; "
+                   "takes effect next task)"))
+
+
 def cmd_notes(project) -> None:
     notes = project.notes()
     print(notes if notes else ui.dim("  no notes yet — add one with /note <text>"))
@@ -281,6 +310,8 @@ def _dispatch(session: Session, raw: str) -> bool:
     elif cmd in ("doctor", "doc", "wtf"):
         from karl.doctor import run_doctor
         run_doctor()
+    elif cmd in ("workspace", "ws"):
+        cmd_workspace(project, rest)
     elif cmd == "notes":
         cmd_notes(project)
     elif cmd == "note":

@@ -112,10 +112,22 @@ def load_crew(project) -> list:
     return crew or list(DEFAULT_CREW)
 
 
-def build_system(agent: Agent, crew: list, lead: str, notes: str) -> str:
-    """The agent's full system prompt: who it is, the roster, and the project's
-    standing notes (long-term memory carried between sessions)."""
+def build_system(agent: Agent, crew: list, lead: str, notes: str,
+                 workspace: str = "") -> str:
+    """The agent's full system prompt: who it is, the roster, where the
+    workspace actually is, and the project's standing notes (long-term memory
+    carried between sessions)."""
     parts = [agent.system, _roster(crew, lead)]
+    if workspace:
+        parts.append(
+            "THE WORKSPACE:\n"
+            f"Your file tools operate under {workspace} — that directory IS "
+            "'the workspace'. Paths are relative to it; anything outside it is "
+            "unreachable by design, not by malfunction. If the operator's "
+            "files live elsewhere, do not flail against the wall — tell the "
+            "operator where the workspace currently points and that they can "
+            "re-point it with `/workspace <dir>` (or start with "
+            "`karl -C <dir>`).")
     if notes:
         parts.append("PROJECT NOTES (what the crew has learned before):\n" + notes)
     return "\n\n".join(parts)

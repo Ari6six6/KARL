@@ -64,6 +64,35 @@ def test_dash_command(project, capsys):
     assert "project" in out and "engine" in out
 
 
+def test_workspace_repoints_live_and_resets(project, capsys, tmp_path, monkeypatch):
+    import os
+    from karl.cli import cmd_workspace
+    monkeypatch.delenv("KARL_WORKSPACE", raising=False)
+    managed = project.workspace
+
+    real = tmp_path / "myrepo"
+    real.mkdir()
+    cmd_workspace(project, str(real))
+    assert os.environ["KARL_WORKSPACE"] == str(real.resolve())
+    assert project.workspace == real.resolve()      # live, same session
+
+    cmd_workspace(project, "/no/such/dir/anywhere")
+    assert project.workspace == real.resolve()      # typo changes nothing
+    assert "not a directory" in capsys.readouterr().out
+
+    cmd_workspace(project, "reset")
+    assert "KARL_WORKSPACE" not in os.environ
+    assert project.workspace == managed
+
+
+def test_crew_knows_where_its_workspace_is(project):
+    from karl.crew import DEFAULT_CREW, build_system
+    system = build_system(DEFAULT_CREW[0], DEFAULT_CREW, "karl", "",
+                          workspace="/home/somebody/code")
+    assert "/home/somebody/code" in system
+    assert "/workspace <dir>" in system
+
+
 def test_bare_exit_words_leave_the_cockpit(project, monkeypatch):
     monkeypatch.setenv("KARL_OFFLINE", "1")
     from karl.cli import _dispatch

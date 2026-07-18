@@ -226,7 +226,8 @@ class Session:
         (spoken_line, live) — ``live`` True when the line already streamed to
         the screen, so it must not be echoed twice."""
         agent = self.by_name[name]
-        system = build_system(agent, self.crew, self.lead, self.project.notes())
+        system = build_system(agent, self.crew, self.lead, self.project.notes(),
+                              workspace=str(self.project.workspace))
         ctx = ToolContext(workspace=self.project.workspace, project=self.project,
                           can_egress=agent.can_egress, web_open=self.web_open,
                           shell_mode=self.shell_mode, shell_net=self.shell_net,
