@@ -24,7 +24,8 @@ from karl.crew import load_crew, write_default_crew
 from karl.session import Session
 
 BANNER = f"""{ui.bold(ui.cyan('  KARL'))} {ui.dim('— a small, fast multi-agent harness for local models')}
-{ui.dim('  type a task and the crew works on it, live · /help for commands · /quit to leave')}
+{ui.dim('  type a task and the crew works on it, live · /help for commands')}
+{ui.dim('  Ctrl-C aborts a running round · quit (or Ctrl-D) leaves')}
 """
 
 HELP = f"""{ui.bold('Commands')}
@@ -44,7 +45,9 @@ HELP = f"""{ui.bold('Commands')}
   {ui.cyan('/project')} [name]   show, switch, or create the current project
   {ui.cyan('/crew')} init        write an editable crew.json you can customize
   {ui.cyan('/help')}             this
-  {ui.cyan('/quit')}             leave
+  {ui.cyan('/quit')}             leave — plain {ui.cyan('quit')}/{ui.cyan('exit')}/{ui.cyan('q')} and Ctrl-D work too
+  {ui.dim('Ctrl-C during a round aborts that round and returns you to the prompt;')}
+  {ui.dim('Ctrl-C at the prompt leaves.')}
 """
 
 
@@ -245,6 +248,10 @@ def _dispatch(session: Session, raw: str) -> bool:
     """One line from the operator. Returns False to exit. Mutates the session
     in place when the project changes."""
     if not raw.startswith("/"):
+        # a bare exit word is never a task — let people leave the way they
+        # already know how, slash or no slash
+        if raw.lower() in ("quit", "exit", "q", ":q", "bye"):
+            return False
         session.run_task(raw)
         return True
     cmd, _, rest = raw[1:].partition(" ")
@@ -307,7 +314,8 @@ def repl() -> None:
             if not _dispatch(session, raw):
                 break
         except KeyboardInterrupt:
-            print(ui.yellow("\n  (interrupted)"))
+            print(ui.yellow("\n  ✋ round abandoned.")
+                  + ui.dim("  (quit — or Ctrl-C at the prompt — to leave)"))
         except Exception as e:  # noqa: BLE001 — the cockpit must survive one bad turn
             print(ui.red(f"  error: {type(e).__name__}: {e}"))
     print(ui.dim("  — bye —"))
@@ -331,6 +339,10 @@ def _pop_workspace(argv: list) -> list:
 def main(argv=None) -> int:
     try:
         return _main(argv)
+    except KeyboardInterrupt:
+        # Ctrl-C on a headless run: a clean exit, not a traceback
+        print(ui.yellow("\n  (interrupted)"))
+        return 130
     except BrokenPipeError:
         # stdout was closed under us (`karl … | head`) — die quietly, the
         # Unix way, instead of vomiting a traceback over the operator

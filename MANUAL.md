@@ -82,6 +82,12 @@ you ▸ find every TODO in the workspace and rank them by risk
 - **wrench** edits files and runs the shell — when you've enabled it (§3).
 - `⚙` lines are tools firing. The closing dim line is round telemetry.
 
+**Stopping things.** One `Ctrl-C` during a round aborts *that round* — the
+crew stops mid-turn and you're back at the prompt, nothing lost but the
+half-spoken line. To leave the cockpit: `quit` (also `exit`, `q`, `/quit`),
+`Ctrl-D`, or `Ctrl-C` at an empty prompt. On a headless `karl run`, `Ctrl-C`
+exits clean with code 130.
+
 Cockpit commands worth knowing:
 
 ```

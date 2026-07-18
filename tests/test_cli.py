@@ -62,6 +62,24 @@ def test_dash_command(project, capsys):
     assert "project" in out and "engine" in out
 
 
+def test_bare_exit_words_leave_the_cockpit(project, monkeypatch):
+    monkeypatch.setenv("KARL_OFFLINE", "1")
+    from karl.cli import _dispatch
+    from karl.session import Session
+    s = Session(project, echo=False)
+    for word in ("quit", "exit", "q", ":q", "QUIT"):
+        assert _dispatch(s, word) is False
+    assert s.transcript.entries() == []    # none of them became a task
+
+
+def test_ctrl_c_on_a_headless_run_exits_clean(project, monkeypatch, capsys):
+    import karl.cli as cli
+    monkeypatch.setattr(cli, "_main",
+                        lambda argv=None: (_ for _ in ()).throw(KeyboardInterrupt))
+    assert main(["run", "x"]) == 130
+    assert "Traceback" not in capsys.readouterr().out
+
+
 def test_workspace_flag_sets_the_override(project, capsys, tmp_path, monkeypatch):
     import os
     monkeypatch.delenv("KARL_WORKSPACE", raising=False)
