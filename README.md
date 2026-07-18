@@ -10,6 +10,11 @@ library — nothing to install — and the crew speaks **live**: tokens land on
 your screen as they come off the wire, with a tachometer covering the silent
 seconds and one telemetry line closing every round.
 
+**The default is the real thing.** No model attached → KARL refuses to run and
+tells you how to attach one; if a GPU box is on file from an earlier
+`gpu ssh`, it reattaches automatically. (Want to watch the machinery move with
+no model? The canned demo crew is one env var away: `KARL_OFFLINE=1 karl`.)
+
 ```sh
 git clone https://github.com/Ari6six6/KARL.git
 cd KARL
@@ -41,6 +46,7 @@ table for everything that happens after.
 > | | MoRE | KARL |
 > |---|---|---|
 > | output | whole completions, then print | **streams live, token by token** |
+> | no model | silent canned stand-in | **refuses + auto-reattaches a saved box**; stand-in opt-in |
 > | editing | whole-file overwrite only | **surgical `edit_file`** + overwrite |
 > | cockpit | banner + spinner | tachometer, live gear lines, `/dash`, round telemetry |
 > | crew | lead / researcher / worker | **karl / scout / wrench** |
@@ -247,7 +253,7 @@ karl allow docs.python.org                              # open one domain (gated
 
 Environment overrides (handy for one-off runs and containers): `KARL_BASE_URL`,
 `KARL_MODEL`, `KARL_API_KEY`, `KARL_SHELL`, `KARL_WEB`, `KARL_WORKSPACE`,
-`KARL_HOME`.
+`KARL_HOME`, `KARL_OFFLINE` (opt into the canned no-model demo crew).
 
 ---
 

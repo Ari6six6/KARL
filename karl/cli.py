@@ -63,13 +63,17 @@ def _web_label() -> str:
 
 def cmd_dash(project) -> None:
     """The dashboard: everything that matters, one glance."""
+    import os
     cfg = endpoint()
     if cfg["base_url"]:
         engine = f"{cfg['model']} {ui.dim('@ ' + cfg['base_url'])}"
         if not cfg["stream"]:
             engine += ui.dim(" · stream off")
+    elif os.environ.get("KARL_OFFLINE"):
+        engine = ui.yellow("offline stand-in (KARL_OFFLINE) — canned theater")
     else:
-        engine = ui.dim("offline stand-in — no endpoint set")
+        engine = ui.red("none") + ui.dim(" — attach one: karl gpu ssh <ssh…> · "
+                                         "karl config --base-url <url>")
     crew = load_crew(project)
     names = " · ".join(
         ui.speaker_paint(a.name)(a.name) + (ui.dim("*") if a.can_egress else "")
@@ -96,7 +100,8 @@ def cmd_model() -> None:
         print(ui.dim(f"  model: {cfg['model']} @ {cfg['base_url']}"))
         print(ui.dim(f"  shell: {_shell_label(cfg)} · web: {_web_label()}"))
     else:
-        print(ui.dim("  offline stand-in — no endpoint set. Reach a model with one of:"))
+        print(ui.dim("  no model attached — nothing runs until there is one. "
+                     "Reach a model with one of:"))
         print(ui.dim("    karl gpu ssh -p <port> root@<ip> -L 8080:localhost:8080   # rent+serve"))
         print(ui.dim("    karl config --base-url http://localhost:8080/v1 --model <name>"))
         print(ui.dim("  or export KARL_BASE_URL / KARL_MODEL for one run."))
@@ -324,6 +329,17 @@ def _pop_workspace(argv: list) -> list:
 
 
 def main(argv=None) -> int:
+    try:
+        return _main(argv)
+    except BrokenPipeError:
+        # stdout was closed under us (`karl … | head`) — die quietly, the
+        # Unix way, instead of vomiting a traceback over the operator
+        import os
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 141
+
+
+def _main(argv=None) -> int:
     from karl import __version__
     argv = _pop_workspace(list(sys.argv[1:] if argv is None else argv))
     if argv and argv[0] in ("-h", "--help"):
@@ -345,8 +361,7 @@ def main(argv=None) -> int:
         if not task:
             print(ui.yellow("usage: karl run \"<task>\""))
             return 2
-        Session(load_project()).run_task(task)
-        return 0
+        return 0 if Session(load_project()).run_task(task) else 1
     if argv and argv[0] in ("dash", "status"):
         cmd_dash(load_project())
         return 0

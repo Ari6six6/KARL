@@ -172,6 +172,8 @@ re-provisioning anything.
 
 | symptom | meaning | do |
 |---|---|---|
+| `✗ no model attached — KARL doesn't fake it` | no endpoint configured (and no box on file to reattach) | `karl gpu ssh …` or `karl config --base-url …`; `karl dash` shows which world you're in |
+| crew answers instantly with the same lines | you set `KARL_OFFLINE=1` — that's the canned demo crew, and it says so | unset it and attach a model |
 | `the box reset the SSH handshake` | box still booting / fail2ban breathing | nothing — KARL retries 4× for you; re-run if it gives up |
 | `auth denied` | wrong key on the box | add your key in the Vast console / `ssh-add` |
 | `port 8080 is held — sliding to 18080` | Vast's proxy squats 8080 | nothing — the tunnel followed; local side unchanged |
@@ -208,7 +210,8 @@ starting set — confirm a repo resolves before renting a box for it, and edit
 --web open|gated --stream on|off`
 
 **Env (beats config, per-run):** `KARL_BASE_URL`, `KARL_MODEL`,
-`KARL_API_KEY`, `KARL_SHELL`, `KARL_WEB`, `KARL_WORKSPACE`, `KARL_HOME`.
+`KARL_API_KEY`, `KARL_SHELL`, `KARL_WEB`, `KARL_WORKSPACE`, `KARL_HOME`,
+`KARL_OFFLINE` (opt into the canned no-model demo crew).
 
 **On disk** — everything is plain files:
 

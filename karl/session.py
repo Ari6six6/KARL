@@ -138,15 +138,46 @@ class Session:
         self.shell_net = cfg.get("shell_net", "none")
         self.web_open = web_open()
 
+    def _attach(self) -> None:
+        """No endpoint, but a GPU box on file from an earlier ``gpu ssh``?
+        Reattach to it — the default is the real model, not a shrug. The
+        reconnect reopens the tunnel and rewrites the config; a fresh refresh
+        then picks the engine up."""
+        from karl import gpu
+        state = gpu._load()
+        if not (state.get("ssh_conn") and state.get("local_port")
+                and state.get("remote_port")):
+            return
+        echo = self.transcript.echo
+        if echo:
+            print("  " + ui.dim("no endpoint set, but a GPU box is on file — "
+                                "reattaching…"))
+        gpu.handle("reconnect", out=print if echo else (lambda *_: None))
+        self._refresh()
+
     # -- one task --------------------------------------------------------
-    def run_task(self, text: str) -> None:
+    def run_task(self, text: str) -> bool:
+        """Run one round. Returns True if a crew actually worked the task —
+        False when no model is attached (KARL does not fake it)."""
         import sys
         self._refresh()
+        if self.mode == "none":
+            self._attach()
+        if self.mode == "none":
+            if self.transcript.echo:
+                print("  " + ui.red("✗ no model attached — KARL doesn't fake it."))
+                print(ui.dim("    karl gpu ssh -p <port> root@<host> -L "
+                             "8080:localhost:8080   # serve one on your GPU box"))
+                print(ui.dim("    karl config --base-url http://localhost:8080/v1"
+                             "             # or point at any endpoint"))
+                print(ui.dim("    (want the canned demo crew anyway?  "
+                             "KARL_OFFLINE=1 karl)"))
+            return False
         if self.mode == "offline" and self.transcript.echo:
             # the stand-in must never pass for the real crew
-            print("  " + ui.yellow("⚠ offline stand-in — no model attached; the crew "
-                                   "below is canned theater.")
-                  + ui.dim("  attach one: karl gpu ssh <ssh…>  ·  "
+            print("  " + ui.yellow("⚠ offline stand-in — the crew below is "
+                                   "canned theater (KARL_OFFLINE is set).")
+                  + ui.dim("  attach a real model: karl gpu ssh <ssh…>  ·  "
                            "karl config --base-url <url>"))
         tr = self.transcript
         t0 = time.time()
@@ -163,7 +194,7 @@ class Session:
             if speaker == self.lead and addressee == "operator":
                 self._close(spoken, taint0, live)
                 self._telemetry(turn + 1, tools0, t0)
-                return
+                return True
             tr.post(speaker, addressee, spoken, echo=None if not live else False)
             heard_from, speaker, heard = speaker, addressee, spoken
 
@@ -172,6 +203,7 @@ class Session:
                                    opening=False, close=True)
         self._close(spoken, taint0, live)
         self._telemetry(_MAX_TURNS + 1, tools0, t0)
+        return True
 
     def _close(self, spoken: str, taint0: int, live: bool) -> None:
         flagged = self._flag(spoken, taint0)
@@ -271,6 +303,7 @@ class Session:
                 f"— treat as unverified until checked. " + text)
 
 
-def run_headless(task: str) -> None:
-    """One task, printed, then exit — for scripting (`karl run \"...\"`)."""
-    Session().run_task(task)
+def run_headless(task: str) -> bool:
+    """One task, printed, then exit — for scripting (`karl run \"...\"`).
+    Returns False when no model was attached and nothing ran."""
+    return Session().run_task(task)

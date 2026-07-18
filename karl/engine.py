@@ -239,9 +239,17 @@ class MockEngine(Engine):
 
 
 def make_engine():
-    """HTTPEngine when an endpoint is configured, else the offline MockEngine.
-    Returns (engine, mode) with mode 'model' or 'offline'."""
+    """The real model is the default — never theater. Returns (engine, mode):
+
+      'model'    an endpoint is configured → HTTPEngine
+      'offline'  KARL_OFFLINE=1 → the canned MockEngine, explicitly asked for
+      'none'     nothing attached → (None, 'none'); the session refuses to run
+                 a fake round and says how to attach a model instead
+    """
+    import os
     cfg = endpoint()
     if cfg["base_url"]:
         return HTTPEngine(cfg), "model"
-    return MockEngine(), "offline"
+    if os.environ.get("KARL_OFFLINE"):
+        return MockEngine(), "offline"
+    return None, "none"

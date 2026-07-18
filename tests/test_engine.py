@@ -100,7 +100,15 @@ def test_script_engine_drives_tools_then_text():
     assert e.chat([]).content == "(script exhausted)"
 
 
-def test_make_engine_offline_without_endpoint(project):
+def test_make_engine_refuses_without_endpoint(project):
+    # the real model is the default — no endpoint means none, not theater
+    engine, mode = make_engine()
+    assert mode == "none"
+    assert engine is None
+
+
+def test_make_engine_stand_in_is_opt_in(project, monkeypatch):
+    monkeypatch.setenv("KARL_OFFLINE", "1")
     engine, mode = make_engine()
     assert mode == "offline"
     assert isinstance(engine, MockEngine)

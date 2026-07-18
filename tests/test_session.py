@@ -44,9 +44,31 @@ def test_fenced_code_is_stripped_from_the_transcript():
 
 
 # --- whole sessions --------------------------------------------------------
-def test_offline_session_runs_and_terminates(project):
-    s = Session(project, echo=False)   # no endpoint set → offline MockEngine
-    s.run_task("take stock of the workspace")
+def test_no_model_means_no_round(project, capsys):
+    s = Session(project, echo=True)    # nothing attached, no KARL_OFFLINE
+    assert s.run_task("whats in the report?") is False
+    assert s.transcript.entries() == []          # not one fake word
+    out = capsys.readouterr().out
+    assert "no model attached" in out and "gpu ssh" in out
+
+
+def test_no_model_auto_reattaches_a_saved_box(project, monkeypatch):
+    # a box on file from an earlier `gpu ssh` → the session tries reconnect
+    from karl import gpu
+    gpu._save({"ssh_conn": ["-p", "1", "root@h"], "local_port": 8080,
+               "remote_port": 8080})
+    calls = []
+    monkeypatch.setattr(gpu, "handle",
+                        lambda rest, out=print: calls.append(rest))
+    s = Session(project, echo=False)
+    assert s.run_task("go") is False             # fake reconnect set no config
+    assert calls == ["reconnect"]
+
+
+def test_offline_session_runs_and_terminates(project, monkeypatch):
+    monkeypatch.setenv("KARL_OFFLINE", "1")      # the stand-in, explicitly
+    s = Session(project, echo=False)
+    assert s.run_task("take stock of the workspace") is True
     entries = s.transcript.entries()
     assert entries[0]["speaker"] == "operator"
     assert entries[-1]["speaker"] == "karl"
@@ -103,8 +125,9 @@ def test_taint_flag_reaches_the_operator(project):
     assert "⚠" in last and "example.com" in last
 
 
-def test_offline_rounds_announce_the_stand_in(project, capsys):
-    s = Session(project, echo=True)    # echo on, no endpoint → offline
+def test_offline_rounds_announce_the_stand_in(project, capsys, monkeypatch):
+    monkeypatch.setenv("KARL_OFFLINE", "1")
+    s = Session(project, echo=True)
     s.run_task("whats in the report?")
     out = capsys.readouterr().out
     assert "offline stand-in" in out and "canned" in out
@@ -113,6 +136,7 @@ def test_offline_rounds_announce_the_stand_in(project, capsys):
 def test_engine_refreshes_between_tasks(project, monkeypatch):
     # session born pointing at a model…
     monkeypatch.setenv("KARL_BASE_URL", "http://127.0.0.1:1/v1")
+    monkeypatch.setenv("KARL_OFFLINE", "1")
     s = Session(project, echo=False)
     assert s.mode == "model"
     # …endpoint dropped (gpu off / config change) → next task must notice
@@ -131,7 +155,8 @@ def test_injected_test_engine_is_never_refreshed(project, monkeypatch):
     assert s.transcript.entries()[-1]["text"] == "operator, done."
 
 
-def test_session_transcript_lands_on_disk(project):
+def test_session_transcript_lands_on_disk(project, monkeypatch):
+    monkeypatch.setenv("KARL_OFFLINE", "1")
     s = Session(project, echo=False)
     s.run_task("hello crew")
     assert s.transcript.path.exists()

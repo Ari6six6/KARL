@@ -42,10 +42,18 @@ def test_run_without_task_is_a_usage_error(project, capsys):
     assert main(["run"]) == 2
 
 
-def test_headless_run_offline(project, capsys):
+def test_headless_run_refuses_without_a_model(project, capsys):
+    assert main(["run", "look around"]) == 1
+    out = capsys.readouterr().out
+    assert "no model attached" in out
+
+
+def test_headless_run_with_the_opt_in_stand_in(project, capsys, monkeypatch):
+    monkeypatch.setenv("KARL_OFFLINE", "1")
     assert main(["run", "look around"]) == 0
     out = capsys.readouterr().out
     assert "operator" in out       # the transcript printed
+    assert "canned theater" in out # and it said what it was
 
 
 def test_dash_command(project, capsys):
