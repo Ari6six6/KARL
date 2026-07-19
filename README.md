@@ -45,13 +45,19 @@ table for everything that happens after.
 >
 > | | MoRE | KARL |
 > |---|---|---|
+> | memory | none — every round starts blank | **conversation persists across rounds**; operator words outlive crew chatter |
+> | control flow | regex over prose | **structured `handoff` tool**, prose fallback |
+> | turn depth | 8–12 tool calls | **40 (configurable to 200)** with context compaction |
+> | planning | none | **a live task board** every agent sees, the chief maintains |
+> | transcript | code stripped | **bounded code crosses intact** |
 > | output | whole completions, then print | **streams live, token by token** |
 > | no model | silent canned stand-in | **refuses + auto-reattaches a saved box**; stand-in opt-in |
-> | editing | whole-file overwrite only | **surgical `edit_file`** + overwrite |
-> | cockpit | banner + spinner | tachometer, live gear lines, `/dash`, round telemetry |
+> | tools | read/write/search/shell/web | + **surgical `edit_file`**, + **`apt_install`** (persistent sandbox image) |
+> | shell | off by default | **on, sandboxed**; scoped consent for more |
+> | cockpit | banner + spinner | tachometer, gear lines, `/dash`, `/doctor`, telemetry |
 > | crew | lead / researcher / worker | **karl / scout / wrench** |
-> | rails | sandbox · SSRF guard · taint · opt-in shell | same rails, same rigor |
-> | GPU deploy | one command | same one command |
+> | rails | sandbox · SSRF guard · taint | same rails, hardened (scoped consent, timeout caps) |
+> | GPU deploy | one command | same one command, + dead-GPU detection |
 
 ---
 
@@ -167,6 +173,27 @@ docker run --rm -it \
 ```
 
 ---
+
+## The drivetrain
+
+What separates a harness from a chat loop:
+
+- **Memory.** The conversation persists across rounds: recent exchanges ride
+  verbatim under a budget; older ones fold into condensed stores — and what
+  *you* said folds last and survives longest. A follow-up genuinely follows;
+  the crew doesn't re-ask what you already answered. `/history` shows what
+  they remember; `/reset` clears it.
+- **Structured handoffs.** Agents end turns with a `handoff(to, message)`
+  tool — routing is data, not regex. Prose routing stays as the fallback for
+  models that won't call tools.
+- **Deep turns, bounded context.** Default 40 tool calls per turn
+  (`karl config --max-steps`, up to 200; `--max-turns` for the round). As a
+  turn's context grows past budget, old tool output compacts to stubs — the
+  agent keeps recent evidence verbatim, old evidence in summary, and never
+  gets cut off mid-reach.
+- **The board.** A live `board.md` — goal, tasks, blockers — that karl
+  maintains with `update_board` and every agent sees every turn. `/board`
+  shows it; it survives sessions.
 
 ## The crew
 

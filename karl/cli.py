@@ -39,6 +39,9 @@ HELP = f"""{ui.bold('Commands')}
                     ({ui.cyan('/workspace reset')} returns to the managed default)
   {ui.cyan('/sandbox')}          what's baked into the shell sandbox (apt/pip installs)
                     ({ui.cyan('/sandbox reset')} drops the baked image, starts clean)
+  {ui.cyan('/board')}            the crew's live task board (karl maintains it)
+  {ui.cyan('/history')}          what the crew remembers of this conversation
+  {ui.cyan('/reset')}            clear the conversation memory (board/notes stay)
   {ui.cyan('/note')} <text>      add a durable project note (memory across sessions)
   {ui.cyan('/notes')}            show the project notes
   {ui.cyan('/model')}            show how KARL reaches the model
@@ -243,6 +246,13 @@ def cmd_sandbox(project, rest: str) -> None:
     print(ui.dim("  /sandbox reset drops the baked image and starts clean."))
 
 
+def cmd_board(project) -> None:
+    board = project.board()
+    print(board if board else ui.dim(
+        "  no board yet — karl writes it (update_board) when a round starts "
+        "planning; it lives at " + str(project.board_path)))
+
+
 def cmd_notes(project) -> None:
     notes = project.notes()
     print(notes if notes else ui.dim("  no notes yet — add one with /note <text>"))
@@ -269,12 +279,13 @@ def config_from_args(argv: list) -> int:
     flags = {"--base-url": "base_url", "--model": "model", "--api-key": "api_key",
              "--max-tokens": "max_tokens", "--temperature": "temperature",
              "--timeout": "timeout", "--shell": "shell", "--shell-net": "shell_net",
-             "--web": "web", "--stream": "stream", "--installs": "installs"}
+             "--web": "web", "--stream": "stream", "--installs": "installs",
+             "--max-steps": "max_steps", "--max-turns": "max_turns"}
     while i < len(argv):
         a = argv[i]
         if a in flags and i + 1 < len(argv):
             val = argv[i + 1]
-            if a in ("--max-tokens", "--timeout"):
+            if a in ("--max-tokens", "--timeout", "--max-steps", "--max-turns"):
                 val = int(val)
             elif a == "--temperature":
                 val = float(val)
@@ -345,6 +356,14 @@ def _dispatch(session: Session, raw: str) -> bool:
         cmd_workspace(project, rest)
     elif cmd == "sandbox":
         cmd_sandbox(project, rest)
+    elif cmd == "board":
+        cmd_board(project)
+    elif cmd == "history":
+        print(session.memory.render())
+    elif cmd == "reset":
+        session.memory.clear()
+        print(ui.dim("  session memory cleared — the next round starts fresh. "
+                     "(notes and board are untouched.)"))
     elif cmd == "notes":
         cmd_notes(project)
     elif cmd == "note":

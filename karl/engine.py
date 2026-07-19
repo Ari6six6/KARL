@@ -158,7 +158,11 @@ class HTTPEngine(Engine):
             try:
                 with self._open({**self._body(messages, tools),
                                  "stream": True}) as resp:
-                    return parse_sse(resp, on_token)
+                    out = parse_sse(resp, on_token)
+                if out.content or out.tool_calls:
+                    return out
+                # nothing SSE-shaped came back — a server that ignores
+                # stream=true and answers plain JSON lands here; ask plainly
             except Exception as e:  # noqa: BLE001 — sort stall from can't-stream
                 waited = time.time() - t0
                 if waited > self.STALL_S:

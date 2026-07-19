@@ -48,10 +48,17 @@ def test_last_name_wins_mid_sentence_mentions_do_not_steal_the_handoff():
 
 
 # --- transcript hygiene ----------------------------------------------------
-def test_fenced_code_is_stripped_from_the_transcript():
-    line = _plain("done. ```python\nx = 1\n``` see the file")
+def test_small_code_crosses_the_transcript_intact():
+    line = _plain("done. ```python\nif x:\n    y = 1\n``` see the file")
+    assert "if x:\n    y = 1" in line       # indentation survives
+    assert "code omitted" not in line
+
+
+def test_huge_code_blocks_become_a_pointer():
+    line = _plain("done. ```\n" + "x = 1\n" * 500 + "``` see the file")
     assert "x = 1" not in line
-    assert "code omitted" in line
+    assert "large code omitted" in line
+    assert "done." in line and "see the file" in line
 
 
 # --- whole sessions --------------------------------------------------------
@@ -164,6 +171,92 @@ def test_injected_test_engine_is_never_refreshed(project, monkeypatch):
     s.run_task("go")
     assert s.mode == "test"
     assert s.transcript.entries()[-1]["text"] == "operator, done."
+
+
+# --- v10: memory, structured handoffs, the board ---------------------------
+class _Recorder(ScriptEngine):
+    def __init__(self, script):
+        super().__init__(script)
+        self.all_prompts = []
+
+    def chat(self, messages, tools=None, on_token=None):
+        self.all_prompts.append("\n".join(str(m.get("content")) for m in messages))
+        return super().chat(messages, tools, on_token=on_token)
+
+
+def test_a_follow_up_round_remembers_the_conversation(project):
+    engine = _Recorder([
+        {"text": "operator, what type of project do you want?"},   # round 1
+        {"text": "operator, a Node.js project named blitz it is."},  # round 2
+    ])
+    s = Session(project, echo=False, engine=engine)
+    s.run_task("set up a new project")
+    s.run_task("node.js, call it blitz")
+    # the round-2 prompt must carry round 1 verbatim — question AND answer
+    final = engine.all_prompts[-1]
+    assert "what type of project" in final
+    assert "set up a new project" in final
+    assert "node.js, call it blitz" in final
+
+
+def test_memory_folds_but_operator_words_outlive_chatter():
+    from karl.session import Memory
+    m = Memory()
+    m.add("operator→karl", "the secret port is 4242")
+    for i in range(60):
+        m.add("scout→karl", f"finding {i}: " + "x" * 400)
+    rendered = m.render()
+    assert "EARLIER IN THIS SESSION" in rendered          # chatter condensed
+    assert "4242" in rendered                             # the instruction survives
+    assert "still binding" in rendered                    # …in the ledger
+    assert len(rendered) < (Memory.RECENT_BUDGET + Memory.LEDGER_BUDGET
+                            + Memory.DIGEST_BUDGET + 800)
+
+
+def test_structured_handoff_routes_without_prose_names(project):
+    engine = ScriptEngine([
+        {"tool": "handoff", "args": {"to": "wrench", "message": "Take a look."}},
+        {"tool": "handoff", "args": {"to": "karl", "message": "All clear here."}},
+        {"tool": "handoff", "args": {"to": "operator", "message": "Done: all clear."}},
+    ])
+    s = Session(project, echo=False, engine=engine)
+    s.run_task("check the workspace")
+    speakers = [(e["speaker"], e["addressee"]) for e in s.transcript.entries()]
+    assert speakers == [("operator", "karl"), ("karl", "wrench"),
+                        ("wrench", "karl"), ("karl", "operator")]
+
+
+def test_teammate_handoff_to_operator_is_routed_through_the_chief(project):
+    engine = ScriptEngine([
+        {"tool": "handoff", "args": {"to": "wrench", "message": "Go."}},
+        {"tool": "handoff", "args": {"to": "operator", "message": "It is done."}},
+        {"tool": "handoff", "args": {"to": "operator", "message": "Done."}},
+    ])
+    s = Session(project, echo=False, engine=engine)
+    s.run_task("do the thing")
+    entries = s.transcript.entries()
+    assert entries[2]["speaker"] == "wrench"
+    assert entries[2]["addressee"] == "karl"     # not straight to the operator
+
+
+def test_the_board_reaches_every_agent(project):
+    project.board_path.write_text("# Goal: ship v2\n- [ ] write tests\n")
+    engine = _Recorder([{"text": "operator, on it."}])
+    s = Session(project, echo=False, engine=engine)
+    s.run_task("continue")
+    assert "ship v2" in engine.all_prompts[0]     # in the system prompt
+
+
+def test_update_board_tool_writes_the_board(project):
+    import json as _json
+    from karl.engine import ToolCall
+    from karl.tools import ToolContext, build_tools, execute
+    ctx = ToolContext(workspace=project.workspace, project=project)
+    tools = build_tools(["update_board"], ctx)
+    out = execute(tools, ToolCall("t1", "update_board", _json.dumps(
+        {"markdown": "# Goal: fix the brakes\n- [x] diagnose\n- [ ] bleed lines"})), ctx)
+    assert "board updated" in out
+    assert "bleed lines" in project.board()
 
 
 def test_session_transcript_lands_on_disk(project, monkeypatch):

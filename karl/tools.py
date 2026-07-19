@@ -375,6 +375,20 @@ def _deliver(status: int, domain: str, raw: bytes, ctx) -> str:
 
 
 # --------------------------------------------------------------------------
+# the pit board — the crew's live plan, rewritten as work progresses
+# --------------------------------------------------------------------------
+def _update_board(args, ctx):
+    text = (args.get("markdown") or "").strip()
+    if ctx.project is None:
+        return "ERROR: no project to keep a board in"
+    if not text:
+        return "ERROR: an empty board says nothing — write the goal and the tasks"
+    ctx.project.board_path.parent.mkdir(parents=True, exist_ok=True)
+    ctx.project.board_path.write_text(text[:6000] + "\n")
+    return "board updated — the whole crew sees it from their next turn"
+
+
+# --------------------------------------------------------------------------
 # remember (append a durable note to the project — long-term memory)
 # --------------------------------------------------------------------------
 def _remember(args, ctx):
@@ -453,6 +467,12 @@ TOOLBOX = {
         "facts worth not relearning.",
         {"type": "object", "properties": {"note": {"type": "string"}},
          "required": ["note"]}, _remember),
+    "update_board": Tool(
+        "update_board", "Rewrite the crew's shared task board (markdown): the "
+        "goal, the tasks as - [ ] / - [x] lines, and any blockers. Every agent "
+        "sees it every turn. Keep it current — it IS the plan.",
+        {"type": "object", "properties": {"markdown": {"type": "string"}},
+         "required": ["markdown"]}, _update_board),
 }
 
 

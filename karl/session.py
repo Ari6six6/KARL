@@ -1,15 +1,23 @@
-"""The session — a crew working one task at a time in one shared transcript.
+"""The session — a crew working across rounds, with a memory that persists.
 
-Turn order is read from the words themselves: an agent ends its line by naming
-who speaks next, and that agent goes next (``next_speaker``). The chief is the
-hub — he opens each round and closes it by turning to the operator. A hard turn
-cap guarantees every round ends.
+Three layers of state, each with a job:
 
-On a TTY the crew speaks *live*: tokens stream onto the screen as they come off
-the wire, tool calls tick past as gear lines, and the tachometer covers the
-silent seconds. Off a TTY every line prints whole — same transcript, no
-theatrics. Each round closes with one dim telemetry line: turns, tool calls,
-elapsed.
+  * **Memory** — the conversation across rounds. What the operator asked, what
+    the crew answered, what was decided: carried verbatim while it fits, folded
+    into a condensed digest as it ages. A follow-up round genuinely follows.
+  * **The board** — the crew's live plan (``board.md``), rewritten by the chief
+    as work progresses, shown to every agent every turn.
+  * **The transcript** — the full record on disk (jsonl), untouched by any of
+    the compaction above.
+
+Turn order is structured first, prose second: an agent ends its turn with the
+``handoff`` tool naming who speaks next; a plain line falls back to
+name-mention routing (last name wins). The chief is the hub — only he speaks
+with the operator, and that is how a round closes. A hard turn cap guarantees
+every round ends.
+
+On a TTY the crew speaks live — streaming tokens, gear lines, the tach — and
+each round closes with one dim telemetry line.
 """
 
 from __future__ import annotations
@@ -26,30 +34,49 @@ from karl.loop import think_and_act
 from karl.tools import ToolContext, build_tools
 
 _OPERATOR_ALIASES = ("operator", "user")
-_MAX_TURNS = 10
+_MAX_TURNS = 24
 
 _FENCE = re.compile(r"```.*?```", re.DOTALL)
+_MAX_FENCE = 1200      # code blocks up to this size cross the transcript intact
 _MAX_LINE = 1500
+_MAX_LINE_CODE = 4200  # a line carrying code gets more room
 
 
 def _plain(text: str) -> str:
-    # the transcript carries prose and file references, not pasted code — that
-    # keeps lines readable and stops a pasted log from poisoning later turns
-    cleaned = _FENCE.sub("[code omitted — see the file]", text or "")
-    return " ".join(cleaned.split()).strip()
+    """Prose is collapsed to clean single-spaced text; fenced code up to
+    _MAX_FENCE crosses verbatim (indentation and all) so the crew can actually
+    show each other a diff. Oversized blocks become a pointer to the file."""
+    text = text or ""
+    parts, pos, fenced = [], 0, False
+    for m in _FENCE.finditer(text):
+        outside = " ".join(text[pos:m.start()].split())
+        if outside:
+            parts.append(outside)
+        block = m.group(0)
+        if len(block) <= _MAX_FENCE:
+            parts.append(block)
+            fenced = True
+        else:
+            parts.append("[large code omitted — see the file]")
+        pos = m.end()
+    tail = " ".join(text[pos:].split())
+    if tail:
+        parts.append(tail)
+    return ("\n".join(parts) if fenced else " ".join(parts)).strip()
 
 
 def _cap(text: str) -> str:
-    if len(text) <= _MAX_LINE:
+    limit = _MAX_LINE_CODE if "```" in text else _MAX_LINE
+    if len(text) <= limit:
         return text
-    cut = text[:_MAX_LINE].rsplit(" ", 1)[0] or text[:_MAX_LINE]
+    cut = text[:limit].rsplit(" ", 1)[0] or text[:limit]
     return cut + " …(trimmed)"
 
 
 class Transcript:
-    """The one shared channel: every line is plain English, addressed to
-    someone, appended to disk (jsonl) and echoed to the terminal. A live turn
-    reads only the bounded *tail*; the full record stays on disk."""
+    """The one shared channel: every line is plain English (plus bounded code),
+    addressed to someone, appended to disk (jsonl) and echoed to the terminal.
+    The full record stays on disk; prompts read from Memory, not from here."""
 
     def __init__(self, path, *, echo: bool = True):
         self.path = path
@@ -70,26 +97,76 @@ class Transcript:
     def entries(self) -> list:
         return list(self._entries)
 
-    def tail_text(self, n: int = 14) -> str:
-        rows = self._entries[-n:]
-        if not rows:
-            return "(nothing said yet)"
-        return "\n".join(
-            e["speaker"] + (f"→{e['addressee']}" if e.get("addressee") else "")
-            + f": {e['text']}" for e in rows)
+
+class Memory:
+    """The conversation across rounds. Recent lines are carried verbatim under
+    a character budget; overflow folds, oldest first, into two condensed
+    stores with different loyalties:
+
+      * the **ledger** — everything the operator said. Requirements outlive
+        chatter: these lines are folded gently and evicted last.
+      * the **digest** — the crew's own conclusions, folded hard.
+
+    Everything is bounded, so a marathon session eventually forgets — but it
+    forgets crew chatter long before it forgets an instruction."""
+
+    RECENT_BUDGET = 9000
+    LEDGER_BUDGET = 3000
+    DIGEST_BUDGET = 3000
+    _FOLD_LINE = 280
+
+    def __init__(self):
+        self.ledger = ""
+        self.digest = ""
+        self.recent: list = []   # (who, text)
+
+    def add(self, who: str, text: str) -> None:
+        self.recent.append((who, text))
+        self._fold()
+
+    def _size(self) -> int:
+        return sum(len(w) + len(t) + 4 for w, t in self.recent)
+
+    def _fold(self) -> None:
+        while self.recent and self._size() > self.RECENT_BUDGET:
+            who, text = self.recent.pop(0)
+            line = f"{who}: {' '.join(text.split())[:self._FOLD_LINE]}"
+            if who.startswith("operator"):
+                self.ledger = (self.ledger + "\n" + line).strip()
+                if len(self.ledger) > self.LEDGER_BUDGET:
+                    self.ledger = "…" + self.ledger[-self.LEDGER_BUDGET:]
+            else:
+                self.digest = (self.digest + "\n" + line).strip()
+                if len(self.digest) > self.DIGEST_BUDGET:
+                    self.digest = "…" + self.digest[-self.DIGEST_BUDGET:]
+
+    def render(self) -> str:
+        parts = []
+        if self.ledger:
+            parts.append("WHAT THE OPERATOR HAS SAID (condensed, still binding):\n"
+                         + self.ledger)
+        if self.digest:
+            parts.append("EARLIER IN THIS SESSION (condensed):\n" + self.digest)
+        if self.recent:
+            parts.append("THE CONVERSATION SO FAR (verbatim, most recent last):\n"
+                         + "\n".join(f"{w}: {t}" for w, t in self.recent))
+        return "\n\n".join(parts) if parts else "(nothing said yet)"
+
+    def clear(self) -> None:
+        self.ledger = ""
+        self.digest = ""
+        self.recent = []
 
 
 def next_speaker(speaker: str, text: str, names: list, lead: str) -> str:
-    """Who speaks next after ``speaker`` said ``text``.
+    """Prose-fallback routing: who speaks next after ``speaker`` said ``text``.
 
-    The convention is "END your line by naming who speaks next", so the *last*
-    name the line calls (that isn't the speaker's own) wins — a teammate
-    mentioned mid-sentence ("I'll have wrench do it later. operator, which
-    kind?") must not steal a handoff meant for the operator. Naming the
-    operator closes the round when the chief says it, and is routed to the
-    chief when anyone else says it (only the chief speaks with the operator).
-    A line that names no one falls to the chief — and the chief, with no one
-    to hand to, turns to the operator, which is how a round ends.
+    Used only when a turn ended without a structured handoff. The convention
+    is "END your line by naming who speaks next", so the *last* name the line
+    calls (that isn't the speaker's own) wins. Naming the operator closes the
+    round when the chief says it, and is routed to the chief when anyone else
+    says it. A line naming no one falls to the chief — and from the chief, to
+    the operator, which is how a round ends.
     """
     vocab = [n.lower() for n in names] + list(_OPERATOR_ALIASES)
     pattern = re.compile(r"\b(" + "|".join(re.escape(v) for v in vocab) + r")\b",
@@ -119,9 +196,12 @@ class Session:
         self.shell_mode = cfg.get("shell", "off")
         self.shell_net = cfg.get("shell_net", "none")
         self.installs = cfg.get("installs", "ask")
+        self.max_steps = cfg.get("max_steps", 40)
+        self.max_turns = cfg.get("max_turns", _MAX_TURNS)
         self.web_open = web_open()
         stamp = time.strftime("%Y%m%d-%H%M%S")
         self.transcript = Transcript(self.project.session_path(stamp), echo=echo)
+        self.memory = Memory()
         self.tainted: list = []
         self._tool_count = 0
         self._shell_grant = None    # "host" once the operator says yes, this session
@@ -138,13 +218,13 @@ class Session:
         self.shell_mode = self._shell_grant or cfg.get("shell", "off")
         self.shell_net = cfg.get("shell_net", "none")
         self.installs = cfg.get("installs", "ask")
+        self.max_steps = cfg.get("max_steps", 40)
+        self.max_turns = cfg.get("max_turns", _MAX_TURNS)
         self.web_open = web_open()
 
     def _attach(self) -> None:
         """No endpoint, but a GPU box on file from an earlier ``gpu ssh``?
-        Reattach to it — the default is the real model, not a shrug. The
-        reconnect reopens the tunnel and rewrites the config; a fresh refresh
-        then picks the engine up."""
+        Reattach to it — the default is the real model, not a shrug."""
         from karl import gpu
         state = gpu._load()
         if not (state.get("ssh_conn") and state.get("local_port")
@@ -156,6 +236,11 @@ class Session:
                                 "reattaching…"))
         gpu.handle("reconnect", out=print if echo else (lambda *_: None))
         self._refresh()
+
+    def _record(self, speaker: str, addressee, text: str, *, echo=None) -> None:
+        self.transcript.post(speaker, addressee, text, echo=echo)
+        self.memory.add(f"{speaker}→{'you' if addressee == 'operator' else addressee}",
+                        _cap(_plain(text)))
 
     # -- one task --------------------------------------------------------
     def run_task(self, text: str) -> bool:
@@ -176,44 +261,54 @@ class Session:
                              "KARL_OFFLINE=1 karl)"))
             return False
         if self.mode == "offline" and self.transcript.echo:
-            # the stand-in must never pass for the real crew
             print("  " + ui.yellow("⚠ offline stand-in — the crew below is "
                                    "canned theater (KARL_OFFLINE is set).")
                   + ui.dim("  attach a real model: karl gpu ssh <ssh…>  ·  "
                            "karl config --base-url <url>"))
-        tr = self.transcript
         t0 = time.time()
         tools0, taint0 = self._tool_count, len(self.tainted)
         # on a TTY the operator just typed the task — repeating it is clutter
-        tr.post("operator", self.lead, text,
-                echo=False if sys.stdout.isatty() else None)
+        self._record("operator", self.lead, text,
+                     echo=False if sys.stdout.isatty() else None)
         speaker, heard_from, heard = self.lead, "operator", text
 
-        for turn in range(_MAX_TURNS):
-            spoken, live = self._speak(speaker, heard_from, heard,
-                                       opening=(turn == 0))
-            addressee = next_speaker(speaker, spoken, self.names, self.lead)
+        for turn in range(self.max_turns):
+            spoken, live, to = self._speak(speaker, heard_from, heard,
+                                           opening=(turn == 0))
+            addressee = self._route(speaker, spoken, to)
             if speaker == self.lead and addressee == "operator":
                 self._close(spoken, taint0, live)
                 self._telemetry(turn + 1, tools0, t0)
                 return True
-            tr.post(speaker, addressee, spoken, echo=None if not live else False)
+            self._record(speaker, addressee, spoken,
+                         echo=None if not live else False)
             heard_from, speaker, heard = speaker, addressee, spoken
 
         # cap hit: the chief closes honestly rather than wandering on
-        spoken, live = self._speak(self.lead, heard_from, heard,
-                                   opening=False, close=True)
+        spoken, live, _ = self._speak(self.lead, heard_from, heard,
+                                      opening=False, close=True)
         self._close(spoken, taint0, live)
-        self._telemetry(_MAX_TURNS + 1, tools0, t0)
+        self._telemetry(self.max_turns + 1, tools0, t0)
         return True
+
+    def _route(self, speaker: str, spoken: str, to) -> str:
+        """Structured handoff wins; prose routing is the fallback. Either way,
+        only the chief may address the operator — anyone else's 'operator'
+        goes through him."""
+        if to is None:
+            return next_speaker(speaker, spoken, self.names, self.lead)
+        if to in _OPERATOR_ALIASES:
+            return "operator" if speaker == self.lead else self.lead
+        return to if to in self.names else next_speaker(
+            speaker, spoken, self.names, self.lead)
 
     def _close(self, spoken: str, taint0: int, live: bool) -> None:
         flagged = self._flag(spoken, taint0)
         if live and flagged is not spoken and self.transcript.echo:
             # the line already streamed; surface the taint warning it carries
             print("  " + ui.yellow(flagged[:flagged.index(spoken)].strip()))
-        self.transcript.post(self.lead, "operator", flagged,
-                             echo=None if not live else False)
+        self._record(self.lead, "operator", flagged,
+                     echo=None if not live else False)
 
     def _telemetry(self, turns: int, tools0: int, t0: float) -> None:
         if self.transcript.echo:
@@ -226,11 +321,11 @@ class Session:
     def _speak(self, name: str, heard_from: str, heard: str, *,
                opening: bool, close: bool = False):
         """Run one agent's think→act turn, rendered live on a TTY. Returns
-        (spoken_line, live) — ``live`` True when the line already streamed to
-        the screen, so it must not be echoed twice."""
+        (spoken_line, live, handoff_to)."""
         agent = self.by_name[name]
         system = build_system(agent, self.crew, self.lead, self.project.notes(),
-                              workspace=str(self.project.workspace))
+                              workspace=str(self.project.workspace),
+                              board=self.project.board())
         ctx = ToolContext(workspace=self.project.workspace, project=self.project,
                           can_egress=agent.can_egress, web_open=self.web_open,
                           shell_mode=self.shell_mode, shell_net=self.shell_net,
@@ -238,18 +333,15 @@ class Session:
         tools = build_tools(agent.tools, ctx)
         user = self._task(name, heard_from, heard, opening=opening, close=close)
         seed = self._seed(name, opening=opening, close=close)
-        steps = 12 if (agent.can_egress or "run_shell" in agent.tools) else 8
+        targets = [n for n in self.names if n != name] + ["operator"]
 
         stream = ui.Stream(name, enabled=self.transcript.echo)
         tach = ui.Tach(f"{name} is thinking",
                        hint="no tokens yet · Ctrl-C aborts · try: karl doctor")
 
         def ask_operator(question, scope=""):
-            """The consent lever, pulled mid-round: the tach yields the line,
-            the operator answers, the round continues. TTY only — a headless
-            run can't consent, so it stays denied there. A yes grants ONLY the
-            scope that was asked about — consenting to a package install must
-            never unlock anything else."""
+            """The consent lever, pulled mid-round. TTY only; a yes grants
+            ONLY the scope that was asked about."""
             import sys as _sys
             if not (_sys.stdin.isatty() and _sys.stdout.isatty()):
                 return False
@@ -275,8 +367,6 @@ class Session:
         ctx.ask = ask_operator
 
         def on_tool_start(tool_name):
-            # a slow tool must never impersonate a silent model: while it runs,
-            # the tach says so — and stops suggesting `karl doctor` for it
             tach.stop()
             tach.set(f"{name} · running {tool_name}")
             tach.hint = f"{tool_name} still running · Ctrl-C aborts"
@@ -300,31 +390,32 @@ class Session:
 
         tach.start()
         try:
-            spoken, _ = think_and_act(
+            spoken, _, to = think_and_act(
                 self.engine, system=system, user=user, tools=tools, ctx=ctx,
                 seed=seed, on_token=on_token, on_tool=on_tool,
-                on_tool_start=on_tool_start, max_steps=steps)
+                on_tool_start=on_tool_start, handoff_to=targets,
+                max_steps=self.max_steps)
         finally:
             tach.stop()
             live = stream.spoke
             stream.end()
-        return spoken, live
+        return spoken, live, to
 
     def _task(self, name: str, heard_from: str, heard: str, *,
               opening: bool, close: bool) -> str:
-        context = "Recent transcript:\n" + self.transcript.tail_text() + "\n\n"
+        context = self.memory.render() + "\n\n"
         if close:
             return (context + "The round has run long. Bring the operator a clear, "
-                    "plain-English summary of where things stand, and address the "
-                    "operator.")
+                    "plain-English summary of where things stand, and hand off "
+                    "to the operator.")
         if opening and name == self.lead:
             return (context + f"The operator asked: \"{heard}\". This begins the "
-                    "round. Break it into steps and delegate to a teammate by name, "
-                    "or handle a read-only part yourself. End by naming who speaks "
-                    "next.")
+                    "round — and the conversation above still stands. Update the "
+                    "board if the plan changed, delegate with the handoff tool, "
+                    "or handle a read-only part yourself first.")
         return (context + f"It is your turn. {heard_from} said to you: \"{heard}\". "
-                "Do your part with your tools, then speak one plain-English line and "
-                "name who should speak next.")
+                "Do your part with your tools — take the steps you need — then "
+                "end your turn with the handoff tool.")
 
     def _seed(self, name: str, *, opening: bool, close: bool) -> str:
         """A deterministic in-character line for the offline MockEngine, so a

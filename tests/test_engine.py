@@ -100,6 +100,25 @@ def test_stalled_stream_reports_instead_of_retrying(monkeypatch):
     assert fell_back == []   # no 20-minute retry marathon
 
 
+def test_server_ignoring_stream_true_falls_back_to_plain(monkeypatch):
+    # a plain-JSON answer to a stream request parses as an empty SSE stream —
+    # that must trigger the plain fallback, never a silent "(said nothing)"
+    import contextlib
+
+    from karl.engine import ChatResult, HTTPEngine
+    e = HTTPEngine({"base_url": "http://x/v1"})
+
+    @contextlib.contextmanager
+    def fake_open(body):
+        yield [b'{"choices": [{"message": {"content": "plain json"}}]}']
+
+    monkeypatch.setattr(e, "_open", fake_open)
+    monkeypatch.setattr(e, "_complete",
+                        lambda m, t: ChatResult(content="fell back"))
+    res = e.chat([{"role": "user", "content": "x"}], on_token=lambda p: None)
+    assert res.content == "fell back"
+
+
 def test_fast_stream_failure_falls_back_to_plain(monkeypatch):
     from karl.engine import ChatResult, HTTPEngine
     e = HTTPEngine({"base_url": "http://x/v1"})   # STALL_S default: 0s elapsed → fast

@@ -21,7 +21,7 @@ def test_loop_executes_a_tool_and_grounds_the_answer(project):
         {"text": "The east ford is out; route north."},
     ])
     seen = []
-    line, tainted = think_and_act(
+    line, tainted, _ = think_and_act(
         engine, system="s", user="read note.txt",
         tools=build_tools(["read_file"], ctx), ctx=ctx,
         on_tool=lambda name, first: seen.append(name))
@@ -32,7 +32,7 @@ def test_loop_executes_a_tool_and_grounds_the_answer(project):
 
 def test_offline_mock_runs_the_loop_and_speaks(project):
     ctx = _ctx(project)
-    line, _ = think_and_act(
+    line, _, _ = think_and_act(
         MockEngine(), system="s", user="u", tools=build_tools(["read_file"], ctx),
         ctx=ctx, seed="I am ready.")
     assert line == "I am ready."
@@ -41,7 +41,7 @@ def test_offline_mock_runs_the_loop_and_speaks(project):
 def test_tokens_stream_out_through_on_token(project):
     ctx = _ctx(project)
     got = []
-    line, _ = think_and_act(
+    line, _, _ = think_and_act(
         MockEngine(), system="s", user="u", tools=[], ctx=ctx,
         seed="Live words.", on_token=got.append)
     assert line == "Live words."
@@ -64,11 +64,12 @@ def test_reflect_reflex_pushes_to_think(project):
     ctx = _ctx(project)
     (ctx.workspace / "f").write_text("x")
     engine = _Recorder([
-        {"tool": "read_file", "args": {"path": "f"}},       # silent act 1
-        {"tool": "read_file", "args": {"path": "f"}},       # silent act 2 → nudge
-        {"text": "I looked twice; it says x."},
+        {"tool": "read_file", "args": {"path": "f", "offset": 0}},  # silent act 1
+        {"tool": "read_file", "args": {"path": "f", "offset": 1}},  # silent act 2
+        {"tool": "read_file", "args": {"path": "f", "offset": 2}},  # act 3 → nudge
+        {"text": "I looked thrice; it says x."},
     ])
-    line, _ = think_and_act(engine, system="s", user="u",
+    line, _, _ = think_and_act(engine, system="s", user="u",
                             tools=build_tools(["read_file"], ctx), ctx=ctx)
     assert "x" in line
     assert any(m.get("content") == _REFLECT_NUDGE for m in engine.seen)
@@ -79,7 +80,7 @@ def test_step_budget_always_terminates(project):
     (ctx.workspace / "f").write_text("x")
     endless = [{"tool": "read_file", "args": {"path": "f"}}] * 30
     engine = ScriptEngine(endless + [{"text": "closing line"}])
-    line, _ = think_and_act(engine, system="s", user="u",
+    line, _, _ = think_and_act(engine, system="s", user="u",
                             tools=build_tools(["read_file"], ctx), ctx=ctx,
                             max_steps=4)
     assert line  # spoke something rather than spinning forever
@@ -93,7 +94,7 @@ def test_identical_tool_calls_trip_the_stuck_reflex(project):
     ctx = _ctx(project)
     same = {"tool": "list_dir", "args": {}, "say": "I'll have wrench create it."}
     engine = _Recorder([dict(same) for _ in range(12)])
-    line, _ = think_and_act(engine, system="s", user="u",
+    line, _, _ = think_and_act(engine, system="s", user="u",
                             tools=build_tools(["list_dir"], ctx), ctx=ctx,
                             max_steps=12)
     assert line   # spoke and terminated
@@ -119,5 +120,54 @@ def test_tool_start_fires_before_the_result(project):
 def test_empty_answer_gets_one_nudge(project):
     ctx = _ctx(project)
     engine = _Recorder([{"text": ""}, {"text": "Here is my line."}])
-    line, _ = think_and_act(engine, system="s", user="u", tools=[], ctx=ctx)
+    line, _, _ = think_and_act(engine, system="s", user="u", tools=[], ctx=ctx)
     assert line == "Here is my line."
+
+
+# --- v10: structured handoff and context compaction -------------------------
+def test_handoff_tool_ends_the_turn_with_structured_routing(project):
+    ctx = _ctx(project)
+    engine = ScriptEngine([
+        {"tool": "read_file", "args": {"path": "nope"}},
+        {"tool": "handoff", "args": {"to": "wrench",
+                                     "message": "Nothing there. Build it."}},
+    ])
+    line, _, to = think_and_act(engine, system="s", user="u",
+                                tools=build_tools(["read_file"], ctx), ctx=ctx,
+                                handoff_to=["wrench", "operator"])
+    assert to == "wrench"
+    assert line == "Nothing there. Build it."
+
+
+def test_bad_handoff_target_keeps_words_falls_back_to_prose(project):
+    ctx = _ctx(project)
+    engine = ScriptEngine([{"tool": "handoff",
+                            "args": {"to": "nobody", "message": "hm. wrench, go."}}])
+    line, _, to = think_and_act(engine, system="s", user="u", tools=[], ctx=ctx,
+                                handoff_to=["wrench", "operator"])
+    assert to is None                       # session routes by prose instead
+    assert "wrench" in line
+
+
+def test_old_tool_output_compacts_within_budget(project):
+    import karl.loop as loop_mod
+    ctx = _ctx(project)
+    (ctx.workspace / "big.txt").write_text("z" * 3000)
+    reads = [{"tool": "read_file", "args": {"path": "big.txt"}}] * 3
+    # distinct args each read so the stuck reflex stays out of the way
+    for i, r in enumerate(reads):
+        r["args"] = {"path": "big.txt", "offset": i}
+    engine = _Recorder(reads + [{"text": "done"}])
+    old_budget = loop_mod._CONTEXT_BUDGET
+    loop_mod._CONTEXT_BUDGET = 4000
+    loop_mod_keep = loop_mod._KEEP_RECENT
+    loop_mod._KEEP_RECENT = 2
+    try:
+        line, _, _ = think_and_act(engine, system="s", user="u",
+                                   tools=build_tools(["read_file"], ctx), ctx=ctx)
+    finally:
+        loop_mod._CONTEXT_BUDGET = old_budget
+        loop_mod._KEEP_RECENT = loop_mod_keep
+    assert line == "done"
+    assert any("compacted" in str(m.get("content"))
+               for m in engine.seen if m.get("role") == "tool")

@@ -70,7 +70,16 @@ def endpoint() -> dict:
     installs = cfg.get("installs", "ask")
     if installs not in ("ask", "open", "off"):
         installs = "ask"
+
+    def _clamped(key, default, lo, hi):
+        try:
+            return max(lo, min(hi, int(cfg.get(key, default))))
+        except (TypeError, ValueError):
+            return default
+
     return {
+        "max_steps": _clamped("max_steps", 40, 4, 200),
+        "max_turns": _clamped("max_turns", 24, 2, 64),
         "base_url": base.rstrip("/"),
         "model": os.environ.get("KARL_MODEL") or cfg.get("model") or "local",
         "api_key": os.environ.get("KARL_API_KEY") or cfg.get("api_key") or "-",
@@ -157,6 +166,16 @@ class Project:
 
     def notes(self) -> str:
         p = self.notes_path
+        return p.read_text().strip() if p.exists() else ""
+
+    @property
+    def board_path(self) -> Path:
+        # the pit board: the crew's live plan — goal, tasks, status. Rewritten
+        # by the chief as work progresses; shown to every agent every turn.
+        return self.root / "board.md"
+
+    def board(self) -> str:
+        p = self.board_path
         return p.read_text().strip() if p.exists() else ""
 
     def session_path(self, stamp: str) -> Path:

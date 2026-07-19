@@ -88,10 +88,20 @@ half-spoken line. To leave the cockpit: `quit` (also `exit`, `q`, `/quit`),
 `Ctrl-D`, or `Ctrl-C` at an empty prompt. On a headless `karl run`, `Ctrl-C`
 exits clean with code 130.
 
+**The crew remembers.** The conversation carries across rounds — answer a
+question the crew asked and they *have* the context; don't re-explain. What
+you said folds last and survives longest as the session grows. `/history`
+shows exactly what they remember; `/reset` wipes it (board and notes stay).
+Karl also keeps a live task board — `/board` — with the goal and task states;
+it persists between sessions.
+
 Cockpit commands worth knowing:
 
 ```
 /dash              the dashboard, any time
+/board             the crew's live plan (karl maintains it)
+/history           what the crew remembers of this conversation
+/reset             forget the conversation (board/notes survive)
 /agents            the crew, their tools, who can reach the web
 /note <text>       durable project memory (the crew also saves its own via `remember`)
 /notes             read the memory back
@@ -99,6 +109,9 @@ Cockpit commands worth knowing:
 /crew init         write crew.json — rename agents, edit prompts, re-cut tools
 /quit
 ```
+
+Depth knobs: `karl config --max-steps 80` (tool calls per turn, default 40)
+and `--max-turns 32` (turns per round, default 24).
 
 **Working on your real files.** The default workspace is an *empty managed
 folder* under `~/.karl` — if you ask about "the current dir" there, the crew
