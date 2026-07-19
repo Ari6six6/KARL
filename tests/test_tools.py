@@ -95,18 +95,37 @@ def test_no_runtime_asks_the_operator_and_obeys_the_answer(project, monkeypatch)
     out = _run(ctx, ["run_shell"], "run_shell", {"command": "echo hi"})
     assert "DENIED" in out and "Docker" in out
 
-    # operator says yes → the command runs on the host, this call
+    # operator says yes → the command runs on the host, this call — and the
+    # question carries its scope, so a yes can never grant anything else
     asked = []
     ctx = _ctx(project, shell_mode="container",
-               ask=lambda q: asked.append(q) or True)
+               ask=lambda q, scope: asked.append((q, scope)) or True)
     out = _run(ctx, ["run_shell"], "run_shell", {"command": "echo hi"})
     assert "[exit 0]" in out and "hi" in out
-    assert "HOST" in asked[0]
+    assert "HOST" in asked[0][0]
+    assert asked[0][1] == "host_shell"
 
     # operator says no → denied
-    ctx = _ctx(project, shell_mode="container", ask=lambda q: False)
+    ctx = _ctx(project, shell_mode="container", ask=lambda q, scope: False)
     out = _run(ctx, ["run_shell"], "run_shell", {"command": "echo hi"})
     assert "DENIED" in out
+
+
+def test_run_shell_timeout_is_capped(project, monkeypatch):
+    import karl.tools as T
+    seen = {}
+
+    class _Done:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(T.subprocess, "run",
+                        lambda cmd, **kw: seen.update(kw) or _Done())
+    ctx = _ctx(project, shell_mode="host")
+    _run(ctx, ["run_shell"], "run_shell",
+         {"command": "sleep 9999", "timeout": 99999})
+    assert seen["timeout"] == 600     # the model cannot park a round for hours
 
 
 def test_session_shell_grant_survives_refresh(project, monkeypatch):

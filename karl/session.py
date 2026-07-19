@@ -244,10 +244,12 @@ class Session:
         tach = ui.Tach(f"{name} is thinking",
                        hint="no tokens yet · Ctrl-C aborts · try: karl doctor")
 
-        def ask_operator(question):
+        def ask_operator(question, scope=""):
             """The consent lever, pulled mid-round: the tach yields the line,
             the operator answers, the round continues. TTY only — a headless
-            run can't consent, so it stays denied there."""
+            run can't consent, so it stays denied there. A yes grants ONLY the
+            scope that was asked about — consenting to a package install must
+            never unlock anything else."""
             import sys as _sys
             if not (_sys.stdin.isatty() and _sys.stdout.isatty()):
                 return False
@@ -258,17 +260,27 @@ class Session:
             except (EOFError, KeyboardInterrupt):
                 answer = ""
             granted = answer.strip().lower() in ("y", "yes")
-            if granted:
+            if granted and scope == "host_shell":
                 self._shell_grant = "host"
                 self.shell_mode = ctx.shell_mode = "host"
                 print(ui.dim("  host shell granted for this session — persist or "
                              "revoke with `karl config --shell host|container|off`"))
+            elif granted:
+                print(ui.dim("  granted."))
             else:
-                print(ui.dim("  declined — the crew works without the shell."))
+                print(ui.dim("  declined."))
             tach.start()
             return granted
 
         ctx.ask = ask_operator
+
+        def on_tool_start(tool_name):
+            # a slow tool must never impersonate a silent model: while it runs,
+            # the tach says so — and stops suggesting `karl doctor` for it
+            tach.stop()
+            tach.set(f"{name} · running {tool_name}")
+            tach.hint = f"{tool_name} still running · Ctrl-C aborts"
+            tach.start()
 
         def on_token(piece):
             tach.stop()
@@ -283,13 +295,15 @@ class Session:
             elif self.transcript.echo:
                 print("    " + ui.dim("⚙ " + detail))
             tach.set(f"{name} · {tool_name}")
+            tach.hint = "no tokens yet · Ctrl-C aborts · try: karl doctor"
             tach.start()
 
         tach.start()
         try:
             spoken, _ = think_and_act(
                 self.engine, system=system, user=user, tools=tools, ctx=ctx,
-                seed=seed, on_token=on_token, on_tool=on_tool, max_steps=steps)
+                seed=seed, on_token=on_token, on_tool=on_tool,
+                on_tool_start=on_tool_start, max_steps=steps)
         finally:
             tach.stop()
             live = stream.spoke

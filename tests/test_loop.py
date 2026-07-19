@@ -101,6 +101,21 @@ def test_identical_tool_calls_trip_the_stuck_reflex(project):
     assert engine.script            # bailed long before burning the whole script
 
 
+def test_tool_start_fires_before_the_result(project):
+    # the tach relies on this ordering to say "running <tool>" during a slow
+    # tool instead of impersonating a silent model
+    ctx = _ctx(project)
+    (ctx.workspace / "f").write_text("x")
+    events = []
+    engine = ScriptEngine([{"tool": "read_file", "args": {"path": "f"}},
+                           {"text": "done"}])
+    think_and_act(engine, system="s", user="u",
+                  tools=build_tools(["read_file"], ctx), ctx=ctx,
+                  on_tool_start=lambda n: events.append(("start", n)),
+                  on_tool=lambda n, f: events.append(("end", n)))
+    assert events == [("start", "read_file"), ("end", "read_file")]
+
+
 def test_empty_answer_gets_one_nudge(project):
     ctx = _ctx(project)
     engine = _Recorder([{"text": ""}, {"text": "Here is my line."}])

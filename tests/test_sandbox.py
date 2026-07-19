@@ -46,7 +46,7 @@ def test_headless_or_declined_stays_denied(project, monkeypatch):
     monkeypatch.setattr(shell, "probe_runtime", lambda: "docker")
     ctx = _ctx(project)                       # ask hook absent → headless
     assert "DENIED" in _install(ctx, {"packages": ["jq"]})
-    ctx = _ctx(project, ask=lambda q: False)  # operator says no
+    ctx = _ctx(project, ask=lambda q, scope: False)  # operator says no
     assert "declined" in _install(ctx, {"packages": ["jq"]})
 
 
@@ -66,11 +66,12 @@ def test_consented_install_builds_and_reports(project, monkeypatch):
                         lambda proj, rt, apt, pip, timeout=900:
                         built.append((apt, pip)) or (0, ""))
     asked = []
-    ctx = _ctx(project, ask=lambda q: asked.append(q) or True)
+    ctx = _ctx(project, ask=lambda q, scope: asked.append((q, scope)) or True)
     out = _install(ctx, {"packages": ["jq", "gcc"], "pip": ["requests"]})
     assert "installed into the sandbox" in out
     assert built == [(["jq", "gcc"], ["requests"])]
-    assert "jq, gcc, requests" in asked[0]
+    assert "jq, gcc, requests" in asked[0][0]
+    assert asked[0][1] == "install"   # a yes here must never grant host shell
 
 
 def test_open_mode_skips_the_question(project, monkeypatch):

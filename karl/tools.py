@@ -204,7 +204,11 @@ def _run_shell(args, ctx):
     if not cmd:
         return "ERROR: no command"
     ctx.workspace.mkdir(parents=True, exist_ok=True)
-    timeout = int(args.get("timeout", 120))
+    # the model may stretch the timeout, but never park a round for an hour
+    try:
+        timeout = min(max(1, int(args.get("timeout", 120))), 600)
+    except (TypeError, ValueError):
+        timeout = 120
 
     if ctx.shell_mode == "container":
         from karl.shell import probe_runtime, run_in_container
@@ -213,7 +217,8 @@ def _run_shell(args, ctx):
             # no runtime — put the choice to the operator right now, on a TTY,
             # instead of stalling the crew behind a wall the operator can't see
             if ctx.ask and ctx.ask("no container runtime is running — allow an "
-                                   "unsandboxed HOST shell for this session?"):
+                                   "unsandboxed HOST shell for this session?",
+                                   "host_shell"):
                 return _host_shell(cmd, ctx, timeout)
             return ("DENIED: the sandboxed shell needs Docker or Podman running, "
                     "and none answered. The operator can start one, allow the "
@@ -267,7 +272,7 @@ def _apt_install(args, ctx):
     wanted = ", ".join(apt + pip)
     if ctx.installs != "open":
         if not (ctx.ask and ctx.ask(f"install into the shell sandbox: {wanted} "
-                                    "(build-time network only)?")):
+                                    "(build-time network only)?", "install")):
             return "DENIED: the operator declined the install."
     rc, err = build_sandbox(ctx.project, rt, apt, pip)
     if rc != 0:

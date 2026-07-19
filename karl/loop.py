@@ -43,7 +43,8 @@ _STUCK_NUDGE = (
 
 def think_and_act(engine, *, system: str, user: str, tools: list, ctx,
                   seed: str | None = None, on_token=None,
-                  on_tool=lambda *_: None, max_steps: int = _MAX_STEPS):
+                  on_tool=lambda *_: None, on_tool_start=lambda *_: None,
+                  max_steps: int = _MAX_STEPS):
     """Run one agent turn. Returns (spoken_line, tainted)."""
     if isinstance(engine, MockEngine) and seed is not None:
         engine.seed(seed)
@@ -86,6 +87,7 @@ def think_and_act(engine, *, system: str, user: str, tools: list, ctx,
                                                       "arguments": c.arguments}}
                                         for c in res.tool_calls]})
         for c in res.tool_calls:
+            on_tool_start(c.name)
             obs = execute(tools, c, ctx)
             on_tool(c.name, obs.splitlines()[0][:80] if obs else "")
             messages.append({"role": "tool", "tool_call_id": c.id, "content": obs})
