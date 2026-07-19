@@ -67,6 +67,9 @@ def endpoint() -> dict:
     shell = os.environ.get("KARL_SHELL") or cfg.get("shell") or "container"
     if shell not in ("off", "container", "host"):
         shell = "container"
+    installs = cfg.get("installs", "ask")
+    if installs not in ("ask", "open", "off"):
+        installs = "ask"
     return {
         "base_url": base.rstrip("/"),
         "model": os.environ.get("KARL_MODEL") or cfg.get("model") or "local",
@@ -77,6 +80,7 @@ def endpoint() -> dict:
         "stream": cfg.get("stream", "on") != "off",
         "shell": shell,
         "shell_net": cfg.get("shell_net", "none"),
+        "installs": installs,
     }
 
 

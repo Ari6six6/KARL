@@ -208,6 +208,14 @@ observation the agent reads on its next step.
   - `host` — runs directly on the host in the workspace dir. Unsandboxed;
     sensible when KARL itself is already in a throwaway box/container.
   - `off` — refused; a talk-only crew.
+- **`apt_install`** — the toolbox grows on demand. The crew asks for what it's
+  missing (jq, gcc, git, pip packages…); you consent once at the prompt, and
+  the packages are baked into a **persistent per-project sandbox image** the
+  shell uses from then on. Network is allowed only during the install; the
+  shell itself stays offline. Package names are strictly validated — nothing
+  can smuggle shell syntax into the build. `/sandbox` shows what's baked,
+  `/sandbox reset` starts clean, `karl config --installs ask|open|off` sets
+  the policy.
 - **`web_fetch`** — the crew's way onto the public web:
   - only agents marked `can_egress` (the `scout`) get it;
   - **open by default** — any public site, no per-domain permission. (Prefer a

@@ -37,6 +37,8 @@ HELP = f"""{ui.bold('Commands')}
   {ui.cyan('/deny')} <domain>    remove a domain from the allowlist
   {ui.cyan('/workspace')} <dir>  re-point the crew's workspace at any directory, live
                     ({ui.cyan('/workspace reset')} returns to the managed default)
+  {ui.cyan('/sandbox')}          what's baked into the shell sandbox (apt/pip installs)
+                    ({ui.cyan('/sandbox reset')} drops the baked image, starts clean)
   {ui.cyan('/note')} <text>      add a durable project note (memory across sessions)
   {ui.cyan('/notes')}            show the project notes
   {ui.cyan('/model')}            show how KARL reaches the model
@@ -215,6 +217,32 @@ def cmd_workspace(project, rest: str) -> None:
                    "takes effect next task)"))
 
 
+def cmd_sandbox(project, rest: str) -> None:
+    """What's baked into the project's shell sandbox, and the reset lever."""
+    from karl.shell import (image_for, probe_runtime, remove_sandbox,
+                            sandbox_record, shell_image)
+    if rest in ("reset", "clear"):
+        rt = probe_runtime()
+        if rt:
+            remove_sandbox(project, rt)
+        else:
+            p = project.root / "sandbox.json"
+            if p.exists():
+                p.unlink()
+        print(ui.dim(f"  sandbox reset — back to the stock image ({shell_image()})."))
+        return
+    rec = sandbox_record(project)
+    print(ui.dim(f"  image: {image_for(project)}"))
+    if rec.get("apt"):
+        print(ui.dim("  apt:   ") + ", ".join(rec["apt"]))
+    if rec.get("pip"):
+        print(ui.dim("  pip:   ") + ", ".join(rec["pip"]))
+    if not rec.get("apt") and not rec.get("pip"):
+        print(ui.dim("  nothing installed yet — the crew can ask via apt_install, "
+                     "or you can seed it: tell them what to set up."))
+    print(ui.dim("  /sandbox reset drops the baked image and starts clean."))
+
+
 def cmd_notes(project) -> None:
     notes = project.notes()
     print(notes if notes else ui.dim("  no notes yet — add one with /note <text>"))
@@ -241,7 +269,7 @@ def config_from_args(argv: list) -> int:
     flags = {"--base-url": "base_url", "--model": "model", "--api-key": "api_key",
              "--max-tokens": "max_tokens", "--temperature": "temperature",
              "--timeout": "timeout", "--shell": "shell", "--shell-net": "shell_net",
-             "--web": "web", "--stream": "stream"}
+             "--web": "web", "--stream": "stream", "--installs": "installs"}
     while i < len(argv):
         a = argv[i]
         if a in flags and i + 1 < len(argv):
@@ -261,6 +289,9 @@ def config_from_args(argv: list) -> int:
                 return 2
             elif a == "--stream" and val not in ("on", "off"):
                 print(ui.yellow("  --stream must be on or off"))
+                return 2
+            elif a == "--installs" and val not in ("ask", "open", "off"):
+                print(ui.yellow("  --installs must be ask, open, or off"))
                 return 2
             updates[flags[a]] = val
             i += 2
@@ -312,6 +343,8 @@ def _dispatch(session: Session, raw: str) -> bool:
         run_doctor()
     elif cmd in ("workspace", "ws"):
         cmd_workspace(project, rest)
+    elif cmd == "sandbox":
+        cmd_sandbox(project, rest)
     elif cmd == "notes":
         cmd_notes(project)
     elif cmd == "note":

@@ -162,6 +162,27 @@ shows it, or check `~/karl.log` on the box.)
 A build inside `container` mode that needs the internet:
 `karl config --shell-net bridge`.
 
+**Growing the toolbox (`apt_install`).** The stock sandbox is slim on
+purpose, so wrench will hit missing tools. He doesn't have to beg — he has an
+`apt_install` tool: he names the Debian (and/or pip) packages he needs, you
+get one consent line at the prompt —
+
+```
+⚠ wrench asks: install into the shell sandbox: jq, gcc (build-time network only)? [y/N]
+```
+
+— and KARL bakes them into a **persistent per-project image**
+(`karl-sandbox-<project>`) that `run_shell` uses from then on. Install-time
+gets the network; run-time stays offline. `run_shell`'s "command not found"
+even hints him toward it. Manage it:
+
+```
+/sandbox                        # what's baked in (image, apt, pip)
+/sandbox reset                  # drop the image, back to the stock base
+karl config --installs open     # stop asking — auto-approve installs
+karl config --installs off      # never install anything
+```
+
 ---
 
 ## 4 · The web, and taint

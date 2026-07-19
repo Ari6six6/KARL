@@ -39,6 +39,78 @@ def probe_runtime() -> str:
     return ""
 
 
+# --------------------------------------------------------------------------
+# the project sandbox image — how the crew's toolbox grows
+#
+# `apt_install` bakes Debian (and pip) packages into a per-project image the
+# shell then uses. Build-time gets the network (that's what installing means);
+# run-time stays network-off. The recorded package set is the source of truth:
+# every build starts FROM the base image with the full union, so the image is
+# reproducible and `sandbox reset` returns to a clean slate.
+# --------------------------------------------------------------------------
+def sandbox_image_name(project) -> str:
+    return f"karl-sandbox-{project.name}"
+
+
+def sandbox_record(project) -> dict:
+    from karl.config import load_json
+    return load_json(project.root / "sandbox.json", {"apt": [], "pip": []})
+
+
+def image_for(project) -> str:
+    """The image run_shell should use: the project's baked sandbox when
+    packages have been installed, the stock base otherwise."""
+    if project is None:
+        return shell_image()
+    rec = sandbox_record(project)
+    if rec.get("apt") or rec.get("pip"):
+        return sandbox_image_name(project)
+    return shell_image()
+
+
+def sandbox_dockerfile(base: str, apt_pkgs: list, pip_pkgs: list) -> str:
+    lines = [f"FROM {base}"]
+    if apt_pkgs:
+        lines.append("RUN apt-get update && apt-get install -y "
+                     "--no-install-recommends " + " ".join(apt_pkgs)
+                     + " && rm -rf /var/lib/apt/lists/*")
+    if pip_pkgs:
+        lines.append("RUN pip install --no-cache-dir " + " ".join(pip_pkgs))
+    return "\n".join(lines) + "\n"
+
+
+def build_sandbox(project, runtime: str, apt_pkgs: list, pip_pkgs: list,
+                  timeout: int = 900):
+    """Bake the union of everything ever installed into the project image.
+    Returns (rc, err_tail). On success the record is updated on disk."""
+    from karl.config import save_json
+    rec = sandbox_record(project)
+    all_apt = sorted(set(rec.get("apt", [])) | set(apt_pkgs))
+    all_pip = sorted(set(rec.get("pip", [])) | set(pip_pkgs))
+    df = sandbox_dockerfile(shell_image(), all_apt, all_pip)
+    try:
+        p = subprocess.run([runtime, "build", "-t", sandbox_image_name(project), "-"],
+                           input=df, capture_output=True, text=True,
+                           errors="replace", timeout=timeout)
+    except FileNotFoundError:
+        return 127, f"{runtime} not found on PATH"
+    except subprocess.TimeoutExpired:
+        return 124, f"build timed out after {timeout}s"
+    if p.returncode != 0:
+        return p.returncode, (p.stderr or p.stdout or "").strip()[-1500:]
+    save_json(project.root / "sandbox.json", {"apt": all_apt, "pip": all_pip})
+    return 0, ""
+
+
+def remove_sandbox(project, runtime: str) -> None:
+    """Drop the baked image and the record — back to the stock base."""
+    subprocess.run([runtime, "rmi", "-f", sandbox_image_name(project)],
+                   capture_output=True, timeout=60)
+    p = project.root / "sandbox.json"
+    if p.exists():
+        p.unlink()
+
+
 def run_in_container(workspace, command: str, *, runtime: str, network: str = "none",
                      image: str | None = None, timeout: int = 120):
     """Run ``command`` in a throwaway container with ``workspace`` mounted at

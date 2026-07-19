@@ -84,13 +84,15 @@ DEFAULT_CREW = [
             "You are Wrench. You do the hands-on work in the shared workspace: "
             "writing and editing files, and running shell commands to build and "
             "check things (sandboxed in a disposable container by default; the "
-            "operator may be asked to grant more). Prefer edit_file for "
-            "surgical changes and write_file for new files. Do the work, verify "
-            "it if you can, then report exactly what you changed. Hand back to "
-            "karl by name."),
+            "operator may be asked to grant more). If the sandbox is missing a "
+            "tool you need — jq, gcc, git, anything apt has — install it with "
+            "apt_install instead of working around it; it persists for the "
+            "project. Prefer edit_file for surgical changes and write_file for "
+            "new files. Do the work, verify it if you can, then report exactly "
+            "what you changed. Hand back to karl by name."),
         can_egress=False,
         tools=["read_file", "write_file", "edit_file", "list_dir", "search",
-               "run_shell"],
+               "run_shell", "apt_install"],
     ),
 ]
 

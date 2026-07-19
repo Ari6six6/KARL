@@ -36,6 +36,7 @@ class ToolContext:
     web_open: bool = True         # True = any public site; False = allowlist only
     shell_mode: str = "off"       # "off" | "container" (sandboxed) | "host" (unsafe)
     shell_net: str = "none"       # container network: "none" (default) or "bridge"
+    installs: str = "ask"         # apt_install policy: "ask" | "open" | "off"
     tainted: list = field(default_factory=list)   # domains fetched from outside
     changed: list = field(default_factory=list)   # files written this run
     ask: object = None            # operator consent hook: (question) -> bool, TTY only
@@ -218,13 +219,61 @@ def _run_shell(args, ctx):
                     "and none answered. The operator can start one, allow the "
                     "host shell (`karl config --shell host`), or answer yes "
                     "when asked at the prompt.")
+        from karl.shell import image_for
         rc, out, err = run_in_container(ctx.workspace, cmd, runtime=rt,
-                                        network=ctx.shell_net, timeout=timeout)
+                                        network=ctx.shell_net, timeout=timeout,
+                                        image=image_for(ctx.project))
         tail = (out or "") + (("\n" + err) if err and err.strip() else "")
+        if rc == 127:
+            tail += "\n(command not found — a missing tool can be added with apt_install)"
         return f"[exit {rc}]\n{tail[:4000]}" if tail.strip() else f"[exit {rc}] (no output)"
 
     # host mode — explicit, unsandboxed opt-in
     return _host_shell(cmd, ctx, timeout)
+
+
+# --------------------------------------------------------------------------
+# apt_install — the crew's toolbox grows, with the operator's leave
+# --------------------------------------------------------------------------
+# Package names are the only thing that may cross into the image build, and
+# only in these shapes — a name is never allowed to smuggle shell syntax.
+_APT_NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]*$")
+_PIP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(==[A-Za-z0-9._]+)?$")
+
+
+def _apt_install(args, ctx):
+    apt = [str(p).strip() for p in (args.get("packages") or []) if str(p).strip()]
+    pip = [str(p).strip() for p in (args.get("pip") or []) if str(p).strip()]
+    if not apt and not pip:
+        return "ERROR: nothing to install — pass packages (apt) and/or pip lists"
+    bad = ([p for p in apt if not _APT_NAME.match(p)]
+           + [p for p in pip if not _PIP_NAME.match(p)])
+    if bad:
+        return f"ERROR: invalid package names refused: {', '.join(bad[:5])}"
+    if len(apt) + len(pip) > 20:
+        return "ERROR: that's more than 20 packages at once — install in smaller sets"
+    if ctx.shell_mode == "off":
+        return "DENIED: the shell is off, so there is no sandbox to install into."
+    if ctx.shell_mode == "host":
+        return ("NOTE: the shell runs on the host — there is no sandbox image. "
+                "Install with run_shell and the host's own package manager.")
+    if ctx.installs == "off":
+        return "DENIED: the operator disabled sandbox installs (`karl config --installs ask`)."
+    from karl.shell import build_sandbox, probe_runtime
+    rt = probe_runtime()
+    if not rt:
+        return ("DENIED: installing needs a running container runtime "
+                "(Docker/Podman), and none answered.")
+    wanted = ", ".join(apt + pip)
+    if ctx.installs != "open":
+        if not (ctx.ask and ctx.ask(f"install into the shell sandbox: {wanted} "
+                                    "(build-time network only)?")):
+            return "DENIED: the operator declined the install."
+    rc, err = build_sandbox(ctx.project, rt, apt, pip)
+    if rc != 0:
+        return f"ERROR: install failed:\n{err}"
+    return (f"installed into the sandbox: {wanted} — available to run_shell from "
+            "now on (runtime network stays off). Persistent for this project.")
 
 
 # --------------------------------------------------------------------------
@@ -377,6 +426,17 @@ TOOLBOX = {
         {"type": "object", "properties": {"command": {"type": "string"},
                                           "timeout": {"type": "integer"}},
          "required": ["command"]}, _run_shell),
+    "apt_install": Tool(
+        "apt_install", "Install Debian packages (and optionally pip packages) "
+        "into the project's persistent shell sandbox, so run_shell can use "
+        "them from then on. Needs the operator's consent. Network is allowed "
+        "only while installing; run_shell stays offline.",
+        {"type": "object", "properties": {
+            "packages": {"type": "array", "items": {"type": "string"},
+                         "description": "Debian package names, e.g. jq, gcc, git"},
+            "pip": {"type": "array", "items": {"type": "string"},
+                    "description": "pip packages, name or name==version"}}},
+        _apt_install),
     "web_fetch": Tool(
         "web_fetch", "Fetch a URL from the public web. Only for agents allowed "
         "onto the web; private addresses never open.",

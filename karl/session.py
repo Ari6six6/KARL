@@ -118,6 +118,7 @@ class Session:
         cfg = endpoint()
         self.shell_mode = cfg.get("shell", "off")
         self.shell_net = cfg.get("shell_net", "none")
+        self.installs = cfg.get("installs", "ask")
         self.web_open = web_open()
         stamp = time.strftime("%Y%m%d-%H%M%S")
         self.transcript = Transcript(self.project.session_path(stamp), echo=echo)
@@ -136,6 +137,7 @@ class Session:
         cfg = endpoint()
         self.shell_mode = self._shell_grant or cfg.get("shell", "off")
         self.shell_net = cfg.get("shell_net", "none")
+        self.installs = cfg.get("installs", "ask")
         self.web_open = web_open()
 
     def _attach(self) -> None:
@@ -232,7 +234,7 @@ class Session:
         ctx = ToolContext(workspace=self.project.workspace, project=self.project,
                           can_egress=agent.can_egress, web_open=self.web_open,
                           shell_mode=self.shell_mode, shell_net=self.shell_net,
-                          tainted=self.tainted)
+                          installs=self.installs, tainted=self.tainted)
         tools = build_tools(agent.tools, ctx)
         user = self._task(name, heard_from, heard, opening=opening, close=close)
         seed = self._seed(name, opening=opening, close=close)
